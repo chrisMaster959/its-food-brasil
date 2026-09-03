@@ -1,4 +1,4 @@
-using SeuProjeto.Models;
+using ItsFoodBrasil.Models;
 
 namespace ItsFoodBrasil.ViewModels
 {
