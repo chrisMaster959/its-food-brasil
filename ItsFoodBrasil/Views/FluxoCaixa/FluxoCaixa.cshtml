@@ -1,0 +1,334 @@
+@model ItsFoodBrasil.ViewModels.FluxoCaixaViewModel
+
+@{
+    ViewData["Title"] = "Fluxo de Caixa";
+}
+
+<div class="container-fluid mt-4">
+
+    <h2 class="mb-4">Fluxo de Caixa</h2>
+
+    <!-- FILTRO -->
+
+    <form method="get"
+          asp-controller="Financeiro"
+          asp-action="FluxoCaixa"
+          class="card p-3 mb-4">
+
+        <div class="row">
+
+            <div class="col-md-4">
+
+                <label>Data Inicial</label>
+
+                <input type="date"
+                       name="dataInicial"
+                       value="@Model.DataInicial.ToString("yyyy-MM-dd")"
+                       class="form-control"/>
+
+            </div>
+
+            <div class="col-md-4">
+
+                <label>Data Final</label>
+
+                <input type="date"
+                       name="dataFinal"
+                       value="@Model.DataFinal.ToString("yyyy-MM-dd")"
+                       class="form-control"/>
+
+            </div>
+
+            <div class="col-md-2 d-flex align-items-end">
+
+                <button class="btn btn-danger w-100">
+                    Filtrar
+                </button>
+
+            </div>
+
+        </div>
+
+    </form>
+
+    <!-- CARDS -->
+
+    <div class="row mb-4">
+
+        <div class="col-md-3">
+
+            <div class="card shadow-sm">
+
+                <div class="card-body">
+
+                    <small class="text-muted">
+                        SALDO ANTERIOR
+                    </small>
+
+                    <h4>
+                        @Model.SaldoAnterior.ToString("C")
+                    </h4>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-md-3">
+
+            <div class="card shadow-sm">
+
+                <div class="card-body">
+
+                    <small class="text-muted">
+                        ENTRADAS
+                    </small>
+
+                    <h4 class="text-success">
+                        @Model.TotalEntradas.ToString("C")
+                    </h4>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-md-3">
+
+            <div class="card shadow-sm">
+
+                <div class="card-body">
+
+                    <small class="text-muted">
+                        SAÍDAS
+                    </small>
+
+                    <h4 class="text-danger">
+                        @Model.TotalSaidas.ToString("C")
+                    </h4>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="col-md-3">
+
+            <div class="card shadow-sm">
+
+                <div class="card-body">
+
+                    <small class="text-muted">
+                        SALDO ATUAL
+                    </small>
+
+                    <h4 class="text-primary">
+                        @Model.SaldoAtual.ToString("C")
+                    </h4>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- TABELA -->
+
+    <div class="card shadow-sm">
+
+        <div class="card-header bg-white">
+
+            <div class="d-flex justify-content-between">
+
+                <h5>
+                    Movimentações
+                </h5>
+
+                <button class="btn btn-outline-secondary btn-sm"
+                        type="button"
+                        onclick="exportarCSV()">
+
+                    Exportar
+
+                </button>
+
+            </div>
+
+        </div>
+
+        <div class="card-body p-0">
+
+            <table class="table table-hover mb-0"
+                   id="tabelaFluxo">
+
+                <thead class="table-light">
+
+                    <tr>
+
+                        <th>Data</th>
+                        <th>Descrição</th>
+                        <th>Tipo</th>
+                        <th>Categoria</th>
+                        <th>Entrada</th>
+                        <th>Saída</th>
+                        <th>Saldo</th>
+
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                    @{
+                        decimal saldo = Model.SaldoAnterior;
+                    }
+
+                    @foreach (var item in Model.Movimentacoes)
+                    {
+                        if(item.Tipo == "Entrada")
+                        {
+                            saldo += item.Valor;
+                        }
+                        else
+                        {
+                            saldo -= item.Valor;
+                        }
+
+                        <tr>
+
+                            <td>
+                                @item.Data.ToString("dd/MM/yyyy")
+                            </td>
+
+                            <td>
+                                @item.Descricao
+                            </td>
+
+                            <td>
+
+                                @if(item.Tipo == "Entrada")
+                                {
+                                    <span class="badge bg-success">
+                                        Entrada
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger">
+                                        Saída
+                                    </span>
+                                }
+
+                            </td>
+
+                            <td>
+                                @item.Categoria
+                            </td>
+
+                            <td class="text-success fw-bold">
+
+                                @(item.Tipo == "Entrada"
+                                    ? item.Valor.ToString("C")
+                                    : "-")
+
+                            </td>
+
+                            <td class="text-danger fw-bold">
+
+                                @(item.Tipo == "Saída"
+                                    ? item.Valor.ToString("C")
+                                    : "-")
+
+                            </td>
+
+                            <td class="fw-bold">
+                                @saldo.ToString("C")
+                            </td>
+
+                        </tr>
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+        <div class="card-footer bg-white">
+
+            <div class="d-flex justify-content-end gap-5">
+
+                <strong>
+
+                    Entradas:
+                    <span class="text-success">
+                        @Model.TotalEntradas.ToString("C")
+                    </span>
+
+                </strong>
+
+                <strong>
+
+                    Saídas:
+                    <span class="text-danger">
+                        @Model.TotalSaidas.ToString("C")
+                    </span>
+
+                </strong>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script>
+
+function exportarCSV() {
+
+    let tabela = document.getElementById("tabelaFluxo");
+
+    let linhas = tabela.querySelectorAll("tr");
+
+    let csv = [];
+
+    linhas.forEach(linha => {
+
+        let colunas = linha.querySelectorAll("th,td");
+
+        let dados = [];
+
+        colunas.forEach(coluna => {
+
+            dados.push(
+                '"' + coluna.innerText + '"'
+            );
+
+        });
+
+        csv.push(dados.join(";"));
+
+    });
+
+    let blob = new Blob(
+        [csv.join("\n")],
+        {type:"text/csv"}
+    );
+
+    let link = document.createElement("a");
+
+    link.href = URL.createObjectURL(blob);
+
+    link.download = "FluxoCaixa.csv";
+
+    link.click();
+}
+
+</script>
