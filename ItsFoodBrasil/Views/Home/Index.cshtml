@@ -1,8 +1,136 @@
-﻿@{
-    ViewData["Title"] = "Home Page";
+@model DashboardViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Dashboard";
+    var pt = new CultureInfo("pt-BR");
+    string Money(decimal v) => v.ToString("C2", pt);
+
+    var maxVenda = Model.VendasUltimos30Dias.Any() ? Model.VendasUltimos30Dias.Max(v => v.Total) : 1m;
+    if (maxVenda <= 0) maxVenda = 1m;
+
+    string BadgeStatus(string s) => s switch
+    {
+        "Concluída" => "badge badge-ok",
+        "Pendente" => "badge badge-warn",
+        "Cancelada" => "badge badge-err",
+        _ => "badge badge-off"
+    };
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div class="stats stats-4">
+    <div class="card stat">
+        <div class="stat-top"><span class="stat-label">VENDAS HOJE</span><span class="stat-icon"><i class="bi bi-bag-check"></i></span></div>
+        <strong>@Money(Model.VendasHoje)</strong>
+    </div>
+    <div class="card stat">
+        <div class="stat-top"><span class="stat-label">VENDAS NO MÊS</span><span class="stat-icon"><i class="bi bi-graph-up-arrow"></i></span></div>
+        <strong>@Money(Model.VendasMes)</strong>
+    </div>
+    <a class="card stat link" asp-controller="Financeiro" asp-action="FluxoCaixa">
+        <div class="stat-top"><span class="stat-label info">SALDO DE CAIXA</span><span class="stat-icon"><i class="bi bi-wallet2"></i></span></div>
+        <strong class="info">@Money(Model.SaldoCaixa)</strong>
+        <span class="stat-sub">Ver fluxo de caixa</span>
+    </a>
+    <div class="card stat">
+        <div class="stat-top"><span class="stat-label neg">CONTAS A PAGAR (7 DIAS)</span><span class="stat-icon"><i class="bi bi-calendar-event"></i></span></div>
+        <strong class="neg">@Money(Model.ContasPagarProximos7Dias)</strong>
+        <span class="stat-sub">@Model.QtdContasPagar7Dias conta(s) a vencer</span>
+    </div>
 </div>
+
+<section class="card block">
+    <div class="card-head"><h2>Vendas dos últimos 30 dias</h2></div>
+    <div class="bars">
+        @foreach (var v in Model.VendasUltimos30Dias)
+        {
+            var h = Math.Max(2, (int)Math.Round((double)(v.Total / maxVenda) * 100));
+            <div class="bar-col" title="@v.Data.ToString("dd/MM") - @Money(v.Total)">
+                <div class="bar" style="height:@(h)%"></div>
+            </div>
+        }
+    </div>
+    @if (Model.VendasUltimos30Dias.Any())
+    {
+        <div class="bar-axis">
+            <span>@Model.VendasUltimos30Dias.First().Data.ToString("dd/MM")</span>
+            <span>@Model.VendasUltimos30Dias.Last().Data.ToString("dd/MM")</span>
+        </div>
+    }
+</section>
+
+<div class="dash-row">
+    <section class="card block">
+        <div class="card-head"><h2>Validade próxima ou vencida</h2></div>
+        <ul class="list">
+            @foreach (var p in Model.ProdutosValidadeProxima)
+            {
+                var dias = (p.Validade.GetValueOrDefault().Date - DateTime.Today).Days;
+                <li>
+                    <div>
+                        <strong>@p.Nome</strong>
+                        <span class="muted">Lote @(p.Lote ?? "-") · @p.Quantidade un.</span>
+                    </div>
+                    @if (dias < 0)
+                    {
+                        <span class="badge badge-err">Vencido</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-warn">Vence em @dias dia(s)</span>
+                    }
+                </li>
+            }
+            @if (!Model.ProdutosValidadeProxima.Any())
+            {
+                <li class="muted">Nenhum produto com validade próxima.</li>
+            }
+        </ul>
+    </section>
+
+    <section class="card block">
+        <div class="card-head"><h2>Estoque baixo</h2></div>
+        <ul class="list">
+            @foreach (var p in Model.ProdutosEstoqueBaixo)
+            {
+                <li>
+                    <strong>@p.Nome</strong>
+                    <span class="badge @(p.Quantidade == 0 ? "badge-err" : "badge-warn")">@(p.Quantidade == 0 ? "Sem estoque" : p.Quantidade + " un.")</span>
+                </li>
+            }
+            @if (!Model.ProdutosEstoqueBaixo.Any())
+            {
+                <li class="muted">Nenhum produto com estoque baixo.</li>
+            }
+        </ul>
+    </section>
+</div>
+
+<section class="card table-card">
+    <div class="table-head">
+        <h2>Últimas vendas</h2>
+        <a class="btn-outline" asp-controller="Venda" asp-action="Index">Ver todas</a>
+    </div>
+    <div class="table-scroll">
+        <table class="grid">
+            <thead>
+                <tr><th>VENDA</th><th>DATA</th><th>FUNCIONÁRIO</th><th>VALOR</th><th>STATUS</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var v in Model.UltimasVendas)
+                {
+                    <tr>
+                        <td>#@v.IdVenda</td>
+                        <td>@v.Data.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@v.Funcionario</td>
+                        <td>@Money(v.Valor)</td>
+                        <td><span class="@BadgeStatus(v.Status)">@v.Status</span></td>
+                    </tr>
+                }
+                @if (!Model.UltimasVendas.Any())
+                {
+                    <tr><td colspan="5" class="muted center">Nenhuma venda registrada.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
