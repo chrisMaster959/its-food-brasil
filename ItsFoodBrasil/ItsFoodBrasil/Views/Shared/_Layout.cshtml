@@ -1,0 +1,88 @@
+@using System.Linq
+@{
+    var ctrl = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+    var act = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+    bool On(string c, string? a = null) => ctrl == c && (a == null || act == a);
+    bool Grupo(params string[] cs) => cs.Contains(ctrl);
+    string Item(bool ativo) => ativo ? "nav-item active" : "nav-item";
+    string Sub(bool ativo) => ativo ? "sub-item active" : "sub-item";
+    string Group(bool aberto) => aberto ? "nav-group open" : "nav-group";
+}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Its Food Brasil</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+<div class="app">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-logo"><i class="bi bi-basket2-fill"></i></div>
+            <strong>Its Food Brasil</strong>
+            <small>Distribuição de Embutidos</small>
+        </div>
+
+                <nav class="nav">
+            <a class="@Item(On("Home"))" asp-controller="Home" asp-action="Index"><i class="bi bi-house-door"></i><span>Dashboard</span></a>
+            <a class="@Item(On("Venda"))" asp-controller="Venda" asp-action="Create"><i class="bi bi-cash-stack"></i><span>Caixa / PDV</span></a>
+            <a class="@Item(On("Produto"))" asp-controller="Produto" asp-action="Index"><i class="bi bi-box-seam"></i><span>Estoque</></a>
+            @* <div class="@Group(Grupo("Produto", "Categoria"))">
+                <button type="button" class="@Item(Grupo("Produto", "Categoria"))" onclick="this.parentElement.classList.toggle('open')">
+                    <i class="bi bi-box-seam"></i><span>Estoque</span><i class="bi bi-chevron-down chev"></i>
+                </button>
+                <div class="submenu">
+                    <a class="@Sub(On("Produto"))" asp-controller="Produto" asp-action="Index">Produtos</a>
+                    <a class="@Sub(On("Categoria"))" asp-controller="Categoria" asp-action="Index">Categorias</a>
+                </div>
+            </div> *@
+
+            <div class="@Group(Grupo("Financeiro", "Conta", "Movimentacao"))">
+                <button type="button" class="@Item(Grupo("Financeiro", "Conta", "Movimentacao"))" onclick="this.parentElement.classList.toggle('open')">
+                    <i class="bi bi-currency-dollar"></i><span>Financeiro</span><i class="bi bi-chevron-down chev"></i>
+                </button>
+                <div class="submenu">
+                    <a class="@Sub(On("Financeiro", "FluxoCaixa"))" asp-controller="Financeiro" asp-action="FluxoCaixa">Fluxo de Caixa</a>
+                    <a class="@Sub(On("Conta"))" asp-controller="Conta" asp-action="Index">Contas a Pagar</a>
+                    <a class="@Sub(false)" asp-controller="Conta" asp-action="Index">Contas a Receber</a>
+                    <a class="@Sub(On("Movimentacao"))" asp-controller="Movimentacao" asp-action="Index">Movimentações</a>
+                    <a class="@Sub(false)" href="#">Bancos</a>
+                </div>
+            </div>
+
+            <a class="@Item(false)" href="#"><i class="bi bi-file-earmark-bar-graph"></i><span>Relatórios</span></a>
+
+            <div class="@Group(Grupo("Funcionario", "Perfil"))">
+                <button type="button" class="@Item(Grupo("Funcionario", "Perfil"))" onclick="this.parentElement.classList.toggle('open')">
+                    <i class="bi bi-people"></i><span>Cadastros</span><i class="bi bi-chevron-down chev"></i>
+                </button>
+                <div class="submenu">
+                    <a class="@Sub(On("Funcionario"))" asp-controller="Funcionario" asp-action="Index">Funcionários</a>
+                    <a class="@Sub(On("Perfil"))" asp-controller="Perfil" asp-action="Index">Perfis</a>
+                </div>
+            </div>
+
+            <a class="@Item(false)" href="#"><i class="bi bi-gear"></i><span>Configurações</span></a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div>Usuário: <strong>Admin</strong></div>
+            <div>Empresa: Its Food Brasil</div>
+            <form asp-controller="Account" asp-action="Logout" method="post">
+                <button type="submit" class="btn-sair"><i class="bi bi-box-arrow-right"></i> Sair</button>
+            </form>
+        </div>
+    </aside>
+
+    <div class="main">
+        <header class="topbar"><h1>@ViewData["Title"]</h1></header>
+        <main class="content">
+            @RenderBody()
+        </main>
+    </div>
+</div>
+</body>
+</html>
