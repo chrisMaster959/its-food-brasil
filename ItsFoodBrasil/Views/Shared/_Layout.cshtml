@@ -41,7 +41,6 @@
           asp-append-version="true" />
 
 </head>
-
 <body>
 
 <div class="app">
@@ -125,125 +124,20 @@
 
             </a>
 
-
-            <!-- =================================================
-                 FINANCEIRO
-                 ================================================= -->
-
-            <div class="@Group(Grupo("Conta", "Movimentacao"))">
-
-                <button type="button"
-                        class="@Item(Grupo("Conta", "Movimentacao"))"
-                        onclick="this.parentElement.classList.toggle('open')">
-
-                    <i class="bi bi-currency-dollar"></i>
-
-                    <span>Financeiro</span>
-
-                    <i class="bi bi-chevron-down chev"></i>
-
-                </button>
-
-
-                <div class="submenu">
-
-                    <!-- Contas a Pagar -->
-                    <a class="@Sub(On("Conta"))"
-                       asp-controller="Conta"
-                       asp-action="Index">
-
-                        Contas a Pagar
-
-                    </a>
-
-
-                    <!-- Contas a Receber -->
-                    <a class="@Sub(false)"
-                       asp-controller="Conta"
-                       asp-action="Index">
-
-                        Contas a Receber
-
-                    </a>
-
-
-                    <!-- Movimentações -->
-                    <a class="@Sub(On("Movimentacao"))"
-                       asp-controller="Movimentacao"
-                       asp-action="Index">
-
-                        Movimentações
-
-                    </a>
-
-
-                    <!-- Bancos -->
-                    <a class="@Sub(false)"
-                       href="#">
-
-                        Bancos
-
-                    </a>
-
-                </div>
-
-            </div>
-
-
-            <!-- Relatórios -->
-            <a class="@Item(false)"
-               href="#">
-
-                <i class="bi bi-file-earmark-bar-graph"></i>
-
-                <span>Relatórios</span>
-
-            </a>
-
-
             <!-- =================================================
                  CADASTROS
                  ================================================= -->
 
-            <div class="@Group(Grupo("Funcionario", "Perfil"))">
+              <a class="@Item(On("Cadastro"))"
+               asp-controller="Cadastro"
+               asp-action="Index">
 
-                <button type="button"
-                        class="@Item(Grupo("Funcionario", "Perfil"))"
-                        onclick="this.parentElement.classList.toggle('open')">
+                <i class="bi bi-box-seam"></i>
 
-                    <i class="bi bi-people"></i>
+                <span>Cadastros</span>
 
-                    <span>Cadastros</span>
+            </a>
 
-                    <i class="bi bi-chevron-down chev"></i>
-
-                </button>
-
-
-                <div class="submenu">
-
-                    <!-- Funcionários -->
-                    <a class="@Sub(On("Funcionario"))"
-                       asp-controller="Funcionario"
-                       asp-action="Index">
-
-                        Funcionários
-
-                    </a>
-
-
-                    <!-- Perfis -->
-                    <a class="@Sub(On("Perfil"))"
-                       asp-controller="Perfil"
-                       asp-action="Index">
-
-                        Perfis
-
-                    </a>
-
-                </div>
-
-            </div>
 
 
             <!-- Configurações -->

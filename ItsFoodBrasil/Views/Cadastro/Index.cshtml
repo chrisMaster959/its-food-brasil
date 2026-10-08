@@ -1,0 +1,238 @@
+@using ItsFoodBrasil.ViewModels
+@model CadastroListViewModel
+
+@{
+    ViewData["Title"] = "Cadastro";
+}
+
+<div class="stats stats-4">
+
+<div class="card stat"> <div class="stat-top"> <span class="stat-label">FUNCIONÁRIOS</span> <span class="stat-icon"> <i class="bi bi-person-badge"></i> </span> </div>
+
+<strong>@Model.TotalFuncionarios</strong>
+
+<span class="stat-sub"> Cadastrados </span> </div>
+
+<div class="card stat"> <div class="stat-top"> <span class="stat-label">FUNCIONÁRIOS ATIVOS</span> <span class="stat-icon"> <i class="bi bi-person-check"></i> </span> </div>
+
+<strong class="pos"> @Model.FuncionariosAtivos </strong>
+
+<span class="stat-sub"> Em atividade </span> </div>
+
+<div class="card stat"> <div class="stat-top"> <span class="stat-label info">PERFIS</span> <span class="stat-icon"> <i class="bi bi-shield-check"></i> </span> </div>
+
+<strong class="info"> @Model.TotalPerfis </strong>
+
+<span class="stat-sub"> Perfis cadastrados </span> </div>
+
+<div class="card stat"> <div class="stat-top"> <span class="stat-label @(Model.FuncionariosInativos > 0 ? "neg" : "pos")"> INATIVOS </span>
+
+<span class="stat-icon"> <i class="bi bi-person-x"></i> </span> </div>
+
+<strong class="@(Model.FuncionariosInativos > 0 ? "neg" : "pos")"> @Model.FuncionariosInativos </strong>
+
+<span class="stat-sub"> Funcionários inativos </span> </div>
+
+</div>
+
+<form method="get" class="card filters">
+
+<div class="search-box">
+
+<i class="bi bi-search"></i>
+
+<input type="text" name="busca" value="@Model.Busca" placeholder="Buscar por nome, CPF ou usuário..." />
+
+</div>
+
+<select name="tipo" class="select">
+
+<option value="">Todos os cadastros</option>
+
+<option value="funcionario" selected="@(Model.Tipo == "funcionario")"> Funcionários </option>
+
+<option value="perfil" selected="@(Model.Tipo == "perfil")"> Perfis </option>
+
+</select>
+
+<select name="situacao" class="select">
+
+<option value="">Todas as situações</option>
+
+<option value="ativo" selected="@(Model.Situacao == "ativo")"> Ativos </option>
+
+<option value="inativo" selected="@(Model.Situacao == "inativo")"> Inativos </option>
+
+</select>
+
+<button type="submit" class="btn-primary">
+
+<i class="bi bi-funnel"></i>
+
+Filtrar
+
+</button>
+
+@if (Model.Filtrando) { <a class="btn-outline" asp-action="Index">
+
+Limpar
+
+</a> }
+
+</form>
+
+<section class="card table-card">
+
+<div class="table-head">
+
+<div> <h2>Cadastros</h2>
+
+<span class="muted"> Funcionários e perfis de acesso </span> </div>
+
+<div style="display:flex; gap:10px;">
+
+<a class="btn-outline" asp-controller="Perfil" asp-action="Create">
+
+<i class="bi bi-shield-plus"></i>
+
+Novo Perfil
+
+</a>
+
+<a class="btn-primary" asp-controller="Funcionario" asp-action="Create">
+
+<i class="bi bi-person-plus"></i>
+
+Novo Funcionário
+
+</a>
+
+</div>
+
+</div>
+
+<div class="table-scroll">
+
+<table class="grid">
+
+<thead>
+
+<tr>
+
+<th>NOME</th>
+
+<th>TIPO</th>
+
+<th>USUÁRIO</th>
+
+<th>PERFIL</th>
+
+<th>STATUS</th>
+
+<th></th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+@foreach (var item in Model.Cadastros) {
+
+<tr class="@(item.Ativo ? "" : "row-off")">
+
+<td>
+
+<strong> @item.Nome </strong>
+
+@if (!string.IsNullOrWhiteSpace(item.Documento)) { <div class="muted"> CPF: @item.Documento </div> }
+
+</td>
+
+<td>
+
+@if (item.Tipo == "Funcionário") { <span class="badge badge-ok"> <i class="bi bi-person"></i> Funcionário </span> } else { <span class="badge badge-warn"> <i class="bi bi-shield"></i> Perfil </span> }
+
+</td>
+
+<td>
+
+@if (!string.IsNullOrWhiteSpace(item.Usuario)) { @item.Usuario } else { <span class="muted"> - </span> }
+
+</td>
+
+<td>
+
+@if (!string.IsNullOrWhiteSpace(item.Perfil)) { @item.Perfil } else { <span class="muted"> - </span> }
+
+</td>
+
+<td>
+
+@if (item.Ativo) { <span class="badge badge-ok"> Ativo </span> } else { <span class="badge badge-off"> Inativo </span> }
+
+</td>
+
+<td class="actions">
+
+<a class="icon-btn" href="@item.DetalhesUrl" title="Detalhes">
+
+<i class="bi bi-eye"></i>
+
+</a>
+
+<a class="icon-btn" href="@item.EditarUrl" title="Editar">
+
+<i class="bi bi-pencil"></i>
+
+</a>
+
+<a class="icon-btn danger" href="@item.ExcluirUrl" title="Excluir">
+
+<i class="bi bi-trash"></i>
+
+</a>
+
+</td>
+
+</tr>
+
+}
+
+@if (!Model.Cadastros.Any()) {
+
+<tr>
+
+<td colspan="6" class="muted center">
+
+Nenhum cadastro encontrado.
+
+</td>
+
+</tr>
+
+}
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="table-foot">
+
+<span class="muted">
+
+@Model.Cadastros.Count cadastro(s) listado(s)
+
+</span>
+
+<span class="muted">
+
+Funcionários e perfis cadastrados no sistema.
+
+</span>
+
+</div>
+
+</section>
