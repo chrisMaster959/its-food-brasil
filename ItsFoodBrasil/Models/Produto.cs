@@ -20,10 +20,8 @@ namespace ItsFoodBrasil.Models
 
         public bool Ativo { get; set; }
 
-
         // FK -> Categoria
         public Categoria Categoria { get; set; } = null!;
-
 
         // Relacionamento com ItemVenda
         public ICollection<ItemVenda> ItensVenda { get; set; }

@@ -1,0 +1,383 @@
+@model ItsFoodBrasil.Models.Produto
+
+@{
+    ViewData["Title"] = "Novo Produto";
+
+    var categorias =
+        ViewBag.Categorias as List<ItsFoodBrasil.Models.Categoria>
+        ?? new List<ItsFoodBrasil.Models.Categoria>();
+}
+
+<div class="page-header">
+    <div>
+        <h2>Novo Produto</h2>
+        <p class="muted">
+            Cadastre um novo produto no estoque.
+        </p>
+    </div>
+
+    <a asp-action="Index" class="btn-outline">
+        <i class="bi bi-arrow-left"></i>
+        Voltar
+    </a>
+</div>
+
+<form asp-action="Create" method="post">
+
+    @Html.AntiForgeryToken()
+
+    <div asp-validation-summary="ModelOnly"
+         class="pdv-alert err"
+         role="alert"></div>
+
+    <div class="card form-card">
+
+        <div class="form-section">
+            <div class="form-section-title">
+                <i class="bi bi-box-seam"></i>
+                Informações do produto
+            </div>
+
+            <div class="form-grid">
+
+                <div class="form-group form-group-full">
+                    <label asp-for="Nome">
+                        Nome do produto
+                        <span>*</span>
+                    </label>
+
+                    <input asp-for="Nome"
+                           class="form-input"
+                           placeholder="Ex.: Presunto fatiado 200g"
+                           autofocus />
+
+                    <span asp-validation-for="Nome"
+                          class="field-error"></span>
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="IdCategoria">
+                        Categoria
+                        <span>*</span>
+                    </label>
+
+                    <select asp-for="IdCategoria"
+                            class="form-input">
+
+                        <option value="">
+                            Selecione uma categoria
+                        </option>
+
+                        @foreach (var categoria in categorias)
+                        {
+                            <option value="@categoria.IdCategoria">
+                                @categoria.Nome
+                            </option>
+                        }
+
+                    </select>
+
+                    <span asp-validation-for="IdCategoria"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="Preco">
+                        Preço de venda
+                        <span>*</span>
+                    </label>
+
+                    <div class="input-money">
+                        <span>R$</span>
+
+                        <input asp-for="Preco"
+                               type="number"
+                               step="0.01"
+                               min="0"
+                               class="form-input"
+                               placeholder="0,00" />
+                    </div>
+
+                    <span asp-validation-for="Preco"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="QuantidadeEstoque">
+                        Quantidade em estoque
+                    </label>
+
+                    <input asp-for="QuantidadeEstoque"
+                           type="number"
+                           min="0"
+                           class="form-input"
+                           placeholder="0" />
+
+                    <span asp-validation-for="QuantidadeEstoque"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="Lote">
+                        Lote
+                    </label>
+
+                    <input asp-for="Lote"
+                           class="form-input"
+                           placeholder="Ex.: L2410A" />
+
+                    <span asp-validation-for="Lote"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="Validade">
+                        Data de validade
+                    </label>
+
+                    <input asp-for="Validade"
+                           type="date"
+                           class="form-input" />
+
+                    <span asp-validation-for="Validade"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="checkbox-label">
+
+                        <input asp-for="Ativo"
+                               type="checkbox" />
+
+                        <span>
+                            Produto ativo
+                        </span>
+
+                    </label>
+
+                    <small class="muted">
+                        Produtos inativos não aparecem como
+                        disponíveis para venda.
+                    </small>
+
+                </div>
+
+            </div>
+        </div>
+
+
+        <div class="form-footer">
+
+            <a asp-action="Index"
+               class="btn-outline">
+                Cancelar
+            </a>
+
+            <button type="submit"
+                    class="btn-primary">
+                <i class="bi bi-check-lg"></i>
+                Salvar Produto
+            </button>
+
+        </div>
+
+    </div>
+
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
+E acrescente este CSS ao final do seu site.css:
+
+/* ============================================================
+   FORMULÁRIO DE PRODUTO
+   ============================================================ */
+
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.page-header h2 {
+    margin: 0 0 4px;
+    font-size: 20px;
+}
+
+.page-header p {
+    margin: 0;
+    font-size: 13px;
+}
+
+.form-card {
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.form-section {
+    padding: 22px 24px;
+}
+
+.form-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.form-section-title i {
+    color: var(--wine);
+    font-size: 18px;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-group-full {
+    grid-column: 1 / -1;
+}
+
+.form-group label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.form-group label span {
+    color: var(--neg);
+}
+
+.form-input {
+    width: 100%;
+    min-height: 40px;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--wine);
+    box-shadow: 0 0 0 3px rgba(122, 12, 12, .1);
+}
+
+select.form-input {
+    cursor: pointer;
+}
+
+.input-money {
+    position: relative;
+}
+
+.input-money > span {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    z-index: 1;
+}
+
+.input-money .form-input {
+    padding-left: 38px;
+}
+
+.field-error {
+    color: var(--neg);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.checkbox-label {
+    display: flex !important;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin-top: 24px;
+}
+
+.checkbox-label input {
+    width: 17px;
+    height: 17px;
+    accent-color: var(--wine);
+    cursor: pointer;
+}
+
+.form-group small {
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.form-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 24px;
+    background: #f8f9fb;
+    border-top: 1px solid var(--border);
+}
+
+@@media (max-width: 760px) {
+
+    .page-header {
+        align-items: flex-start;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .form-group-full {
+        grid-column: auto;
+    }
+
+    .form-section {
+        padding: 18px;
+    }
+
+    .form-footer {
+        padding: 14px 18px;
+    }
+}

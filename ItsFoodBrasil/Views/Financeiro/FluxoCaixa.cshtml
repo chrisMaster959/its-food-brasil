@@ -1,0 +1,425 @@
+@model ItsFoodBrasil.ViewModels.FluxoCaixaViewModel
+
+@{
+    ViewData["Title"] = "Fluxo de Caixa";
+}
+
+<div class="financeiro-page">
+
+    <!-- =====================================================
+         CABEÇALHO
+         ===================================================== -->
+
+    <div class="page-head">
+
+        <div>
+
+            <h2>
+                Fluxo de Caixa
+            </h2>
+
+            <p class="muted">
+                Acompanhe as entradas, saídas e o saldo do período.
+            </p>
+
+        </div>
+
+
+        <!-- Exportar -->
+        <a asp-controller="Financeiro"
+           asp-action="ExportarCsv"
+           asp-route-dataInicial="@Model.DataInicial.ToString("yyyy-MM-dd")"
+           asp-route-dataFinal="@Model.DataFinal.ToString("yyyy-MM-dd")"
+           class="btn-outline">
+
+            <i class="bi bi-download"></i>
+
+            Exportar CSV
+
+        </a>
+
+    </div>
+
+
+    <!-- =====================================================
+         FILTROS
+         ===================================================== -->
+
+    <div class="card filters financeiro-filters">
+
+        <form asp-controller="Financeiro"
+              asp-action="FluxoCaixa"
+              method="get"
+              class="financeiro-filter-form">
+
+
+            <!-- Data inicial -->
+            <div class="filter-field">
+
+                <label for="dataInicial">
+                    Data inicial
+                </label>
+
+                <input type="date"
+                       id="dataInicial"
+                       name="dataInicial"
+                       value="@Model.DataInicial.ToString("yyyy-MM-dd")" />
+
+            </div>
+
+
+            <!-- Data final -->
+            <div class="filter-field">
+
+                <label for="dataFinal">
+                    Data final
+                </label>
+
+                <input type="date"
+                       id="dataFinal"
+                       name="dataFinal"
+                       value="@Model.DataFinal.ToString("yyyy-MM-dd")" />
+
+            </div>
+
+
+            <!-- Botão filtrar -->
+            <button type="submit"
+                    class="btn-primary">
+
+                <i class="bi bi-search"></i>
+
+                Filtrar
+
+            </button>
+
+        </form>
+
+    </div>
+
+
+    <!-- =====================================================
+         CARDS DE RESUMO
+         ===================================================== -->
+
+    <div class="stats stats-4">
+
+
+        <!-- Saldo anterior -->
+        <div class="card stat">
+
+            <div class="stat-top">
+
+                <span class="stat-label">
+                    Saldo anterior
+                </span>
+
+                <div class="stat-icon">
+
+                    <i class="bi bi-wallet2"></i>
+
+                </div>
+
+            </div>
+
+            <strong>
+
+                @Model.SaldoAnterior.ToString("C2")
+
+            </strong>
+
+            <span class="stat-sub">
+
+                Antes do período selecionado
+
+            </span>
+
+        </div>
+
+
+        <!-- Entradas -->
+        <div class="card stat">
+
+            <div class="stat-top">
+
+                <span class="stat-label">
+                    Entradas
+                </span>
+
+                <div class="stat-icon">
+
+                    <i class="bi bi-arrow-down-left"></i>
+
+                </div>
+
+            </div>
+
+            <strong class="pos">
+
+                @Model.TotalEntradas.ToString("C2")
+
+            </strong>
+
+            <span class="stat-sub">
+
+                Total de entradas
+
+            </span>
+
+        </div>
+
+
+        <!-- Saídas -->
+        <div class="card stat">
+
+            <div class="stat-top">
+
+                <span class="stat-label">
+                    Saídas
+                </span>
+
+                <div class="stat-icon">
+
+                    <i class="bi bi-arrow-up-right"></i>
+
+                </div>
+
+            </div>
+
+            <strong class="neg">
+
+                @Model.TotalSaidas.ToString("C2")
+
+            </strong>
+
+            <span class="stat-sub">
+
+                Total de saídas
+
+            </span>
+
+        </div>
+
+
+        <!-- Saldo atual -->
+        <div class="card stat">
+
+            <div class="stat-top">
+
+                <span class="stat-label">
+                    Saldo atual
+                </span>
+
+                <div class="stat-icon">
+
+                    <i class="bi bi-cash-stack"></i>
+
+                </div>
+
+            </div>
+
+            <strong class="@(Model.SaldoAtual >= 0 ? "pos" : "neg")">
+
+                @Model.SaldoAtual.ToString("C2")
+
+            </strong>
+
+            <span class="stat-sub">
+
+                Saldo ao final do período
+
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <!-- =====================================================
+         TABELA DE MOVIMENTAÇÕES
+         ===================================================== -->
+
+    <div class="card table-card">
+
+
+        <!-- Cabeçalho da tabela -->
+        <div class="table-head">
+
+            <div>
+
+                <h2>
+                    Movimentações
+                </h2>
+
+                <span class="muted">
+
+                    @Model.DataInicial.ToString("dd/MM/yyyy")
+
+                    até
+
+                    @Model.DataFinal.ToString("dd/MM/yyyy")
+
+                </span>
+
+            </div>
+
+
+            <span class="badge badge-off">
+
+                @Model.Movimentacoes.Count registro(s)
+
+            </span>
+
+        </div>
+
+
+        <!-- Tabela -->
+        <div class="table-scroll">
+
+            <table class="grid">
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            DATA
+                        </th>
+
+                        <th>
+                            DESCRIÇÃO
+                        </th>
+
+                        <th>
+                            CATEGORIA
+                        </th>
+
+                        <th>
+                            TIPO
+                        </th>
+
+                        <th style="text-align:right;">
+                            VALOR
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                    @if (Model.Movimentacoes.Any())
+                    {
+
+                        foreach (var item in Model.Movimentacoes
+                            .OrderBy(x => x.Data)
+                            .ThenBy(x => x.Id))
+                        {
+
+                            bool entrada = item.Tipo == "Entrada";
+
+
+                            <tr>
+
+                                <!-- Data -->
+                                <td>
+
+                                    @item.Data.ToString("dd/MM/yyyy")
+
+                                </td>
+
+
+                                <!-- Descrição -->
+                                <td>
+
+                                    <strong>
+                                        @item.Descricao
+                                    </strong>
+
+                                </td>
+
+
+                                <!-- Categoria -->
+                                <td>
+
+                                    @item.Categoria
+
+                                </td>
+
+
+                                <!-- Tipo -->
+                                <td>
+
+                                    @if (entrada)
+                                    {
+
+                                        <span class="badge badge-ok">
+
+                                            <i class="bi bi-arrow-down-left"></i>
+
+                                            Entrada
+
+                                        </span>
+
+                                    }
+                                    else
+                                    {
+
+                                        <span class="badge badge-err">
+
+                                            <i class="bi bi-arrow-up-right"></i>
+
+                                            Saída
+
+                                        </span>
+
+                                    }
+
+                                </td>
+
+
+                                <!-- Valor -->
+                                <td style="text-align:right;">
+
+                                    <strong class="@(entrada ? "pos" : "neg")">
+
+                                        @(entrada ? "+" : "-")
+
+                                        @item.Valor.ToString("C2")
+
+                                    </strong>
+
+                                </td>
+
+                            </tr>
+
+                        }
+
+                    }
+                    else
+                    {
+
+                        <tr>
+
+                            <td colspan="5"
+                                class="center muted">
+
+                                Nenhuma movimentação encontrada
+                                no período selecionado.
+
+                            </td>
+
+                        </tr>
+
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+</div>
