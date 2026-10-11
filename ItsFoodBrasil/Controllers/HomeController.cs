@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using ItsFoodBrasil.Data;
 using ItsFoodBrasil.Models;
 using ItsFoodBrasil.ViewModels;
 
@@ -9,47 +10,85 @@ public class HomeController : Controller
 {
     public IActionResult Index()
     {
-        // DADOS DE EXEMPLO. Troque por consultas ao banco quando existir.
         var hoje = DateTime.Today;
-        var rnd = new Random(42);
 
-        var vendas = Enumerable.Range(0, 30)
-            .Select(i => new VendaDiaItem { Data = hoje.AddDays(i - 29), Total = rnd.Next(3000, 9500) })
+        // só vendas concluídas contam como faturamento
+        var concluidas = VendaStore.Vendas
+            .Where(v => v.Status == "Concluída")
+            .ToList();
+
+        // 30 dias, incluindo os dias sem venda (total 0)
+        var vendasPorDia = Enumerable.Range(0, 30)
+            .Select(i => hoje.AddDays(i - 29))
+            .Select(dia => new VendaDiaItem
+            {
+                Data = dia,
+                Total = concluidas.Where(v => v.Data.Date == dia).Sum(v => v.Valor)
+            })
+            .ToList();
+
+        var saidasMes = MovimentacaoStore.Todas()
+            .Where(m => m.Tipo == "Saída" && m.Data.Year == hoje.Year && m.Data.Month == hoje.Month)
+            .ToList();
+
+        var produtosAtivos = ProdutoStore.Produtos
+            .Where(p => p.Ativo)
             .ToList();
 
         var vm = new DashboardViewModel
         {
-            VendasHoje = vendas.Last().Total,
-            VendasMes = vendas
+            VendasHoje = concluidas.Where(v => v.Data.Date == hoje).Sum(v => v.Valor),
+
+            VendasMes = concluidas
                 .Where(v => v.Data.Year == hoje.Year && v.Data.Month == hoje.Month)
-                .Sum(v => v.Total),
-            SaldoCaixa = 57680m,
-            ContasPagarProximos7Dias = 18350m,
-            QtdContasPagar7Dias = 3,
-            VendasUltimos30Dias = vendas,
+                .Sum(v => v.Valor),
 
-            ProdutosValidadeProxima = new()
-            {
-                new() { Nome = "Bacon em manta 1kg",     Lote = "L2409E", Validade = hoje.AddDays(-3), Quantidade = 30 },
-                new() { Nome = "Linguiça toscana 1kg",   Lote = "L2408F", Validade = hoje.AddDays(4),  Quantidade = 8 },
-                new() { Nome = "Mortadela defumada 1kg", Lote = "L2409C", Validade = hoje.AddDays(9),  Quantidade = 62 },
-            },
+            SaldoCaixa = MovimentacaoStore.SaldoAte(hoje),
 
-            ProdutosEstoqueBaixo = new()
-            {
-                new() { Nome = "Linguiça toscana 1kg",    Quantidade = 8 },
-                new() { Nome = "Apresuntado 1kg",         Quantidade = 0 },
-                new() { Nome = "Salame italiano 300g",    Quantidade = 12 },
-            },
+            SaidasMes = saidasMes.Sum(m => m.Valor),
+            QtdSaidasMes = saidasMes.Count,
 
-            UltimasVendas = new()
-            {
-                new() { IdVenda = 1048, Data = DateTime.Now.AddMinutes(-25),  Funcionario = "Carlos Silva", Valor = 1280.50m, Status = "Concluída" },
-                new() { IdVenda = 1047, Data = DateTime.Now.AddHours(-2),     Funcionario = "Ana Souza",    Valor = 640.00m,  Status = "Concluída" },
-                new() { IdVenda = 1046, Data = DateTime.Now.AddHours(-4),     Funcionario = "Carlos Silva", Valor = 2350.90m, Status = "Pendente" },
-                new() { IdVenda = 1045, Data = DateTime.Now.AddHours(-26),    Funcionario = "Ana Souza",    Valor = 415.30m,  Status = "Concluída" },
-                new() { IdVenda = 1044, Data = DateTime.Now.AddHours(-30),    Funcionario = "Marcos Lima",  Valor = 980.00m,  Status = "Cancelada" },
-            }
+            VendasUltimos30Dias = vendasPorDia,
+
+            // mesmos limites da tela de Estoque (15 dias / 20 unidades)
+            ProdutosValidadeProxima = produtosAtivos
+                .Where(p => p.QuantidadeEstoque > 0
+                         && p.Validade.HasValue
+                         && (p.Validade.Value.Date - hoje).Days <= ProdutoListViewModel.DiasValidadeProxima)
+                .OrderBy(p => p.Validade)
+                .Take(5)
+                .Select(p => new AlertaProdutoItem
+                {
+                    Nome = p.Nome,
+                    Validade = p.Validade,
+                    Quantidade = p.QuantidadeEstoque
+                })
+                .ToList(),
+
+            ProdutosEstoqueBaixo = produtosAtivos
+                .Where(p => p.QuantidadeEstoque < ProdutoListViewModel.LimiteEstoqueBaixo)
+                .OrderBy(p => p.QuantidadeEstoque)
+                .ThenBy(p => p.Nome)
+                .Take(5)
+                .Select(p => new AlertaProdutoItem
+                {
+                    Nome = p.Nome,
+                    Quantidade = p.QuantidadeEstoque
+                })
+                .ToList(),
+
+            UltimasVendas = VendaStore.Vendas
+                .OrderByDescending(v => v.Data)
+                .Take(5)
+                .Select(v => new UltimaVendaItem
+                {
+                    IdVenda = v.IdVenda,
+                    Data = v.Data,
+                    Funcionario = v.Funcionario,
+                    Valor = v.Valor,
+                    Status = v.Status
+                })
+                .ToList()
         };
 
         return View(vm);

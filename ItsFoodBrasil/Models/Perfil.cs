@@ -4,10 +4,8 @@ namespace ItsFoodBrasil.Models
     {
         public int IdPerfil { get; set; }
 
+        //Administrador / Funcionário
         public string Nome { get; set; } = string.Empty;
-
-        public string? Descricao { get; set; }
-
 
         // Relacionamento 1:N com Funcionario
         public ICollection<Funcionario> Funcionarios { get; set; }

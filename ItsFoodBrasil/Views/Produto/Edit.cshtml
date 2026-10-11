@@ -1,0 +1,187 @@
+@model ItsFoodBrasil.Models.Produto
+
+@{
+    ViewData["Title"] = "Editar Produto";
+
+    var categorias =
+        ViewBag.Categorias as List<ItsFoodBrasil.Models.Categoria>
+        ?? new List<ItsFoodBrasil.Models.Categoria>();
+}
+
+<div class="page-header">
+    <div>
+        <h2>Editar Produto</h2>
+        <p class="muted">
+            Altere os dados do produto (Cód. @Model.IdProduto).
+        </p>
+    </div>
+
+    <a asp-action="Index" class="btn-outline">
+        <i class="bi bi-arrow-left"></i>
+        Voltar
+    </a>
+</div>
+
+<form asp-action="Edit" method="post">
+
+    @Html.AntiForgeryToken()
+
+    <input type="hidden" asp-for="IdProduto" />
+
+    <div asp-validation-summary="ModelOnly"
+         class="pdv-alert err"
+         role="alert"></div>
+
+    <div class="card form-card">
+
+        <div class="form-section">
+            <div class="form-section-title">
+                <i class="bi bi-box-seam"></i>
+                Informações do produto
+            </div>
+
+            <div class="form-grid">
+
+                <div class="form-group form-group-full">
+                    <label asp-for="Nome">
+                        Nome do produto
+                        <span>*</span>
+                    </label>
+
+                    <input asp-for="Nome"
+                           class="form-input"
+                           placeholder="Ex.: Presunto fatiado 200g" />
+
+                    <span asp-validation-for="Nome"
+                          class="field-error"></span>
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="IdCategoria">
+                        Categoria
+                        <span>*</span>
+                    </label>
+
+                    <select asp-for="IdCategoria"
+                            class="form-input">
+
+                        <option value="">
+                            Selecione uma categoria
+                        </option>
+
+                        @foreach (var categoria in categorias)
+                        {
+                            <option value="@categoria.IdCategoria">
+                                @categoria.Nome
+                            </option>
+                        }
+
+                    </select>
+
+                    <span asp-validation-for="IdCategoria"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="Preco">
+                        Preço de venda
+                        <span>*</span>
+                    </label>
+
+                    <div class="input-money">
+                        <span>R$</span>
+
+                        <input asp-for="Preco"
+                               type="number"
+                               step="0.01"
+                               min="0"
+                               class="form-input"
+                               placeholder="0,00" />
+                    </div>
+
+                    <span asp-validation-for="Preco"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="QuantidadeEstoque">
+                        Quantidade em estoque
+                    </label>
+
+                    <input asp-for="QuantidadeEstoque"
+                           type="number"
+                           min="0"
+                           class="form-input"
+                           placeholder="0" />
+
+                    <span asp-validation-for="QuantidadeEstoque"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label asp-for="Validade">
+                        Data de validade
+                    </label>
+
+                    <input asp-for="Validade"
+                           type="date"
+                           class="form-input" />
+
+                    <span asp-validation-for="Validade"
+                          class="field-error"></span>
+
+                </div>
+
+
+                <div class="form-group">
+
+                    <label class="checkbox-label">
+
+                        <input asp-for="Ativo"
+                               type="checkbox" />
+
+                        <span>
+                            Produto ativo
+                        </span>
+
+                    </label>
+
+                    <small class="muted">
+                        Produtos inativos não aparecem como
+                        disponíveis para venda.
+                    </small>
+
+                </div>
+
+            </div>
+        </div>
+
+
+        <div class="form-footer">
+
+            <a asp-action="Index"
+               class="btn-outline">
+                Cancelar
+            </a>
+
+            <button type="submit"
+                    class="btn-primary">
+                <i class="bi bi-check-lg"></i>
+                Salvar alterações
+            </button>
+
+        </div>
+    </div>
+
+</form>

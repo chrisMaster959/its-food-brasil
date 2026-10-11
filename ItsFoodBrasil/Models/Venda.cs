@@ -22,10 +22,5 @@ namespace ItsFoodBrasil.Models
         // Venda possui vários itens
         public ICollection<ItemVenda> ItensVenda { get; set; }
             = new List<ItemVenda>();
-
-
-        // Venda possui contas
-        public ICollection<Conta> Contas { get; set; }
-            = new List<Conta>();
     }
 }

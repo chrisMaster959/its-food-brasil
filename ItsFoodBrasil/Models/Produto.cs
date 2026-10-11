@@ -14,8 +14,6 @@ namespace ItsFoodBrasil.Models
 
         public int QuantidadeEstoque { get; set; }
 
-        public string? Lote { get; set; }
-
         public DateTime? Validade { get; set; }
 
         public bool Ativo { get; set; }

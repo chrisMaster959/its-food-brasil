@@ -1,0 +1,136 @@
+@model ItsFoodBrasil.ViewModels.FuncionarioEditViewModel
+
+@{
+    ViewData["Title"] = "Editar cadastro";
+}
+
+<style>
+    .novo-cad { padding:24px; max-width:680px; }
+    .novo-cad .campo { margin-bottom:18px; }
+    .novo-cad .linha { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .novo-cad .rotulo { display:block; font-size:.75rem; font-weight:600; color:#777; margin-bottom:6px; text-transform:uppercase; letter-spacing:.03em; }
+    .novo-cad input[type=text], .novo-cad input[type=email], .novo-cad input[type=password], .novo-cad select {
+        width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; background:#fff; font:inherit;
+    }
+    .novo-cad .campo-erro { color:#b3261e; font-size:.8rem; display:block; margin-top:4px; }
+    .novo-cad .form-erro { background:#fde6e6; color:#b3261e; border-radius:8px; padding:10px 14px; margin-bottom:16px; }
+    .novo-cad .form-erro:empty { display:none; }
+    .novo-cad .dica { font-size:.8rem; color:#777; margin:-8px 0 14px; }
+    .novo-cad .acoes { display:flex; gap:10px; justify-content:flex-end; margin-top:8px; }
+    .novo-cad .check { display:flex; align-items:center; gap:8px; cursor:pointer; }
+
+    .perfil-toggle { display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; }
+    .perfil-op { position:relative; }
+    .perfil-op input { position:absolute; opacity:0; pointer-events:none; }
+    .perfil-op span {
+        display:flex; justify-content:center; align-items:center; gap:8px; padding:12px;
+        border:2px solid #ddd; border-radius:10px; cursor:pointer; font-weight:600; color:#777;
+    }
+    .perfil-op input:checked + span { border-color:#5a1a2b; background:#f8eef0; color:#5a1a2b; }
+    .perfil-op input:focus-visible + span { outline:2px solid #5a1a2b; outline-offset:2px; }
+
+    @@media (max-width:560px) { .novo-cad .linha { grid-template-columns:1fr; } }
+</style>
+
+<div class="financeiro-page">
+
+    <div class="page-head">
+        <div>
+            <h2>Editar cadastro</h2>
+            <p class="muted">Altere os dados do funcionário e o perfil de acesso.</p>
+        </div>
+        <a asp-controller="Cadastro" asp-action="Index" class="btn-outline">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+    </div>
+
+    <form asp-action="Edit" asp-route-id="@Model.Id" method="post" class="card novo-cad" novalidate autocomplete="off">
+
+        <div asp-validation-summary="ModelOnly" class="form-erro"></div>
+
+        <!-- Perfil -->
+        <div class="campo">
+            <span class="rotulo">Perfil de acesso</span>
+            <div class="perfil-toggle">
+                @foreach (var p in Model.Perfis)
+                {
+                    <label class="perfil-op">
+                        <input type="radio" asp-for="IdPerfil" value="@p.Id" />
+                        <span>
+                            <i class="bi @(p.Nome == "Administrador" ? "bi-shield-check" : "bi-person-badge")"></i>
+                            @p.Nome
+                        </span>
+                    </label>
+                }
+            </div>
+            <span asp-validation-for="IdPerfil" class="campo-erro"></span>
+        </div>
+
+        <!-- Nome -->
+        <div class="campo">
+            <label class="rotulo" for="Nome">Nome completo</label>
+            <input type="text" asp-for="Nome" maxlength="100" />
+            <span asp-validation-for="Nome" class="campo-erro"></span>
+        </div>
+
+        <!-- E-mail e telefone -->
+        <div class="linha">
+            <div class="campo">
+                <label class="rotulo" for="Email">E-mail</label>
+                <input type="email" asp-for="Email" maxlength="150" />
+                <span asp-validation-for="Email" class="campo-erro"></span>
+            </div>
+
+            <div class="campo">
+                <label class="rotulo" for="Telefone">Telefone</label>
+                <input type="text" asp-for="Telefone" inputmode="numeric" placeholder="(11) 99999-9999" />
+                <span asp-validation-for="Telefone" class="campo-erro"></span>
+            </div>
+        </div>
+
+        <!-- Senha (opcional) -->
+        <div class="dica">Deixe a senha em branco para manter a atual.</div>
+        <div class="linha">
+            <div class="campo">
+                <label class="rotulo" for="NovaSenha">Nova senha</label>
+                <input type="password" asp-for="NovaSenha" maxlength="50" autocomplete="new-password" />
+                <span asp-validation-for="NovaSenha" class="campo-erro"></span>
+            </div>
+
+            <div class="campo">
+                <label class="rotulo" for="ConfirmarNovaSenha">Confirmar nova senha</label>
+                <input type="password" asp-for="ConfirmarNovaSenha" maxlength="50" autocomplete="new-password" />
+                <span asp-validation-for="ConfirmarNovaSenha" class="campo-erro"></span>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="campo">
+            <label class="check">
+                <input type="checkbox" asp-for="Ativo" />
+                Cadastro ativo (pode acessar o sistema)
+            </label>
+        </div>
+
+        <div class="acoes">
+            <a asp-controller="Cadastro" asp-action="Index" class="btn-outline">Cancelar</a>
+            <button type="submit" class="btn-primary">
+                <i class="bi bi-check-lg"></i> Salvar alterações
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    (function () {
+        // máscara de telefone: (11) 99999-9999 ou (11) 9999-9999
+        const tel = document.getElementById('Telefone');
+        tel.addEventListener('input', function () {
+            const d = tel.value.replace(/\D/g, '').slice(0, 11);
+            if (d.length > 10)      tel.value = d.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, '($1) $2-$3');
+            else if (d.length > 6)  tel.value = d.replace(/^(\d{2})(\d{4})(\d{0,4}).*/, '($1) $2-$3');
+            else if (d.length > 2)  tel.value = d.replace(/^(\d{2})(\d{0,5}).*/, '($1) $2');
+            else                    tel.value = d;
+        });
+    })();
+</script>  

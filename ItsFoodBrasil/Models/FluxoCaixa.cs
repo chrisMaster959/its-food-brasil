@@ -4,8 +4,7 @@ namespace ItsFoodBrasil.Models
     {
         public int IdFluxoCaixa { get; set; }
 
-        public int IdConta { get; set; }
-
+        // Entrada ou saída
         public string Tipo { get; set; } = string.Empty;
 
         public decimal Valor { get; set; }
@@ -13,9 +12,5 @@ namespace ItsFoodBrasil.Models
         public string? Descricao { get; set; }
 
         public DateTime Data { get; set; }
-
-
-        // FK -> Conta
-        public Conta Conta { get; set; } = null!;
     }
 }

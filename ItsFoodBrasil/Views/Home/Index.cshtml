@@ -31,11 +31,11 @@
         <strong class="info">@Money(Model.SaldoCaixa)</strong>
         <span class="stat-sub">Ver fluxo de caixa</span>
     </a>
-    <div class="card stat">
-        <div class="stat-top"><span class="stat-label neg">CONTAS A PAGAR (7 DIAS)</span><span class="stat-icon"><i class="bi bi-calendar-event"></i></span></div>
-        <strong class="neg">@Money(Model.ContasPagarProximos7Dias)</strong>
-        <span class="stat-sub">@Model.QtdContasPagar7Dias conta(s) a vencer</span>
-    </div>
+    <a class="card stat link" asp-controller="Financeiro" asp-action="FluxoCaixa">
+        <div class="stat-top"><span class="stat-label neg">SAÍDAS DO MÊS</span><span class="stat-icon"><i class="bi bi-arrow-up-right"></i></span></div>
+        <strong class="neg">@Money(Model.SaidasMes)</strong>
+        <span class="stat-sub">@Model.QtdSaidasMes saída(s) lançada(s)</span>
+    </a>
 </div>
 
 <section class="card block">
@@ -68,7 +68,7 @@
                 <li>
                     <div>
                         <strong>@p.Nome</strong>
-                        <span class="muted">Lote @(p.Lote ?? "-") · @p.Quantidade un.</span>
+                        <span class="muted">@p.Quantidade un. em estoque</span>
                     </div>
                     @if (dias < 0)
                     {
@@ -119,7 +119,7 @@
                 @foreach (var v in Model.UltimasVendas)
                 {
                     <tr>
-                        <td>#@v.IdVenda</td>
+                        <td><a asp-controller="Venda" asp-action="Details" asp-route-id="@v.IdVenda">#@v.IdVenda</a></td>
                         <td>@v.Data.ToString("dd/MM/yyyy HH:mm")</td>
                         <td>@v.Funcionario</td>
                         <td>@Money(v.Valor)</td>

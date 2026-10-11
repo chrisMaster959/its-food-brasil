@@ -1,0 +1,140 @@
+@model ItsFoodBrasil.ViewModels.VendaListaItem
+@using System.Globalization
+
+@{
+    ViewData["Title"] = $"Venda #{Model.IdVenda}";
+    var pt = new CultureInfo("pt-BR");
+    string Money(decimal v) => v.ToString("C2", pt);
+
+    string BadgeStatus(string s) => s switch
+    {
+        "Concluída" => "badge badge-ok",
+        "Pendente" => "badge badge-warn",
+        "Cancelada" => "badge badge-err",
+        _ => "badge badge-off"
+    };
+
+    var n = 0;
+}
+
+<style>
+    .tot-linha td { text-align:right; border-top:none; }
+    .tot-final td { font-size:1.05rem; border-top:2px solid #5a1a2b; }
+    .aviso-venda { background:#fff7e0; color:#8a6100; border-radius:8px; padding:10px 14px; margin-bottom:16px; }
+</style>
+
+<div class="financeiro-page">
+
+    <div class="page-head">
+        <div>
+            <h2>Venda #@Model.IdVenda</h2>
+            <p class="muted">@Model.Data.ToString("dd/MM/yyyy 'às' HH:mm")</p>
+        </div>
+        <a asp-action="Index" class="btn-outline">
+            <i class="bi bi-arrow-left"></i> Voltar para vendas
+        </a>
+    </div>
+
+    @if (Model.Status != "Concluída")
+    {
+        <div class="aviso-venda">
+            Esta venda está <strong>@Model.Status.ToLower()</strong> e não entra no fluxo de caixa.
+        </div>
+    }
+
+    <div class="stats stats-4">
+        <div class="card stat">
+            <div class="stat-top">
+                <span class="stat-label">FUNCIONÁRIO</span>
+                <span class="stat-icon"><i class="bi bi-person-badge"></i></span>
+            </div>
+            <strong>@Model.Funcionario</strong>
+            <span class="stat-sub">Responsável pela venda</span>
+        </div>
+
+        <div class="card stat">
+            <div class="stat-top">
+                <span class="stat-label">STATUS</span>
+                <span class="stat-icon"><i class="bi bi-flag"></i></span>
+            </div>
+            <strong><span class="@BadgeStatus(Model.Status)">@Model.Status</span></strong>
+            <span class="stat-sub">Situação atual</span>
+        </div>
+
+        <div class="card stat">
+            <div class="stat-top">
+                <span class="stat-label">ITENS</span>
+                <span class="stat-icon"><i class="bi bi-box-seam"></i></span>
+            </div>
+            <strong>@Model.QtdItens</strong>
+            <span class="stat-sub">@Model.Itens.Count produto(s) diferente(s)</span>
+        </div>
+
+        <div class="card stat">
+            <div class="stat-top">
+                <span class="stat-label info">TOTAL</span>
+                <span class="stat-icon"><i class="bi bi-cash-stack"></i></span>
+            </div>
+            <strong class="info">@Money(Model.Valor)</strong>
+            <span class="stat-sub">Já com o desconto</span>
+        </div>
+    </div>
+
+    <section class="card table-card">
+        <div class="table-head">
+            <div>
+                <h2>Itens vendidos</h2>
+                <span class="muted">Produtos desta venda</span>
+            </div>
+            <span class="badge badge-off">@Model.Itens.Count item(ns)</span>
+        </div>
+
+        <div class="table-scroll">
+            <table class="grid">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>PRODUTO</th>
+                        <th style="text-align:right;">QTD</th>
+                        <th style="text-align:right;">PREÇO UNIT.</th>
+                        <th style="text-align:right;">SUBTOTAL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in Model.Itens)
+                    {
+                        n++;
+                        <tr>
+                            <td>@n</td>
+                            <td><strong>@item.Produto</strong></td>
+                            <td style="text-align:right;">@item.Quantidade</td>
+                            <td style="text-align:right;">@Money(item.PrecoUnitario)</td>
+                            <td style="text-align:right;"><strong>@Money(item.Subtotal)</strong></td>
+                        </tr>
+                    }
+                    @if (!Model.Itens.Any())
+                    {
+                        <tr><td colspan="5" class="muted center">Nenhum item registrado nesta venda.</td></tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr class="tot-linha">
+                        <td colspan="4">Subtotal</td>
+                        <td>@Money(Model.Subtotal)</td>
+                    </tr>
+                    @if (Model.Desconto > 0)
+                    {
+                        <tr class="tot-linha">
+                            <td colspan="4">Desconto</td>
+                            <td class="neg">- @Money(Model.Desconto)</td>
+                        </tr>
+                    }
+                    <tr class="tot-linha tot-final">
+                        <td colspan="4"><strong>Total</strong></td>
+                        <td><strong>@Money(Model.Valor)</strong></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </section>
+</div>

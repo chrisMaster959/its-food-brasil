@@ -32,7 +32,7 @@
 <form method="get" class="card filters">
     <div class="search-box">
         <i class="bi bi-search"></i>
-        <input type="text" name="busca" value="@Model.Busca" placeholder="Buscar por nome ou lote..." />
+        <input type="text" name="busca" value="@Model.Busca" placeholder="Buscar por nome..." />
     </div>
 
     <select name="idCategoria" class="select">
@@ -70,7 +70,7 @@
             <thead>
                 <tr>
                     <th>PRODUTO</th><th>CATEGORIA</th><th>PREÇO</th><th>ESTOQUE</th>
-                    <th>LOTE</th><th>VALIDADE</th><th>STATUS</th><th></th>
+                    <th>VALIDADE</th><th>STATUS</th><th></th>
                 </tr>
             </thead>
             <tbody>
@@ -97,7 +97,6 @@
                             }
                         }
                     </td>
-                    <td>@(p.Lote ?? "-")</td>
                     <td>
                         @if (p.Validade.HasValue)
                         {
@@ -121,7 +120,15 @@
                         else { <span class="badge badge-off">Inativo</span> }
                     </td>
                     <td class="actions">
-                        <a class="icon-btn" asp-action="Details" asp-route-id="@p.IdProduto" title="Detalhes"><i class="bi bi-eye"></i></a>
+                        <form id="ativo-@p.IdProduto" asp-action="AlternarAtivo"
+                            asp-route-id="@p.IdProduto" method="post" style="display:none"></form>
+
+                        <a class="icon-btn" href="#"
+                        title="@(p.Ativo ? "Desativar (deixar de exibir no caixa)" : "Reativar")"
+                        onclick="document.getElementById('ativo-@p.IdProduto').submit(); return false;">
+                            <i class="bi @(p.Ativo ? "bi-eye" : "bi-eye-slash")"></i>
+                        </a>
+
                         <a class="icon-btn" asp-action="Edit" asp-route-id="@p.IdProduto" title="Editar"><i class="bi bi-pencil"></i></a>
                         <a class="icon-btn danger" asp-action="Delete" asp-route-id="@p.IdProduto" title="Excluir"><i class="bi bi-trash"></i></a>
                     </td>

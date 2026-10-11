@@ -1,0 +1,94 @@
+@model VendasIndexViewModel
+@using System.Globalization
+@{
+    ViewData["Title"] = "Vendas";
+    var pt = new CultureInfo("pt-BR");
+    string Money(decimal v) => v.ToString("C2", pt);
+
+    string BadgeStatus(string s) => s switch
+    {
+        "Concluída" => "badge badge-ok",
+        "Pendente" => "badge badge-warn",
+        "Cancelada" => "badge badge-err",
+        _ => "badge badge-off"
+    };
+}
+
+<style>
+    .filtros { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; padding:16px 20px; }
+    .filtros label { display:block; font-size:.75rem; color:#777; margin-bottom:4px; }
+    .filtros input, .filtros select { padding:8px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; }
+    .filtros .acoes { display:flex; gap:8px; align-items:center; }
+    .resumo-vendas { padding:0 20px 12px; color:#777; font-size:.9rem; }
+    .resumo-vendas strong { color:#5a1a2b; }
+</style>
+
+<section class="card table-card">
+    <div class="table-head">
+        <h2>Todas as vendas</h2>
+        <a class="btn-outline" asp-controller="Venda" asp-action="Create">Nova venda</a>
+    </div>
+
+    <form method="get" class="filtros">
+        <div>
+            <label>De</label>
+            <input type="date" name="de" value="@Model.De?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div>
+            <label>Até</label>
+            <input type="date" name="ate" value="@Model.Ate?.ToString("yyyy-MM-dd")" />
+        </div>
+        <div>
+            <label>Status</label>
+            <select name="status">
+                <option value="">Todos</option>
+                @foreach (var s in new[] { "Concluída", "Pendente", "Cancelada" })
+                {
+                    <option value="@s" selected="@(Model.Status == s)">@s</option>
+                }
+            </select>
+        </div>
+        <div class="acoes">
+            <button type="submit" class="btn-outline">Filtrar</button>
+            <a asp-action="Index" class="muted">Limpar</a>
+        </div>
+    </form>
+
+    <div class="resumo-vendas">
+        @Model.Vendas.Count venda(s) · Total concluídas: <strong>@Money(Model.TotalConcluidas)</strong>
+    </div>
+
+    <div class="table-scroll">
+        <table class="grid">
+            <thead>
+                <tr>
+                    <th>VENDA</th>
+                    <th>DATA</th>
+                    <th>FUNCIONÁRIO</th>
+                    <th>ITENS</th>
+                    <th>DESCONTO</th>
+                    <th>VALOR</th>
+                    <th>STATUS</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var v in Model.Vendas)
+                {
+                    <tr>
+                        <td><a asp-action="Details" asp-route-id="@v.IdVenda">#@v.IdVenda</a></td>
+                        <td>@v.Data.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>@v.Funcionario</td>
+                        <td>@v.QtdItens</td>
+                        <td>@Money(v.Desconto)</td>
+                        <td>@Money(v.Valor)</td>
+                        <td><span class="@BadgeStatus(v.Status)">@v.Status</span></td>
+                    </tr>
+                }
+                @if (!Model.Vendas.Any())
+                {
+                    <tr><td colspan="7" class="muted center">Nenhuma venda encontrada.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>

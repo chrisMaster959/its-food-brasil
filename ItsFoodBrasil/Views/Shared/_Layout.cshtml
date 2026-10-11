@@ -19,7 +19,12 @@
     string Group(bool aberto) =>
         aberto ? "nav-group open" : "nav-group";
 }
-
+@if (TempData["Sucesso"] is string sucesso)
+{
+    <div style="background:#e3f4e6; color:#1e7a34; padding:10px 14px; border-radius:8px; margin-bottom:16px;">
+        @sucesso
+    </div>
+}
 <!DOCTYPE html>
 
 <html lang="pt-BR">
@@ -55,7 +60,7 @@
         <div class="brand">
 
             <div class="brand-logo">
-                <i class="bi bi-basket2-fill"></i>
+                <img src="~/Assets/logo-itsfoodmedium.png"/>
             </div>
 
             <strong>Its Food Brasil</strong>
@@ -97,10 +102,8 @@
             </a>
 
 
-            <!-- =================================================
-                 FLUXO DE CAIXA
-                 Agora é uma opção normal do menu
-                 ================================================= -->
+            <!-- Fluxo de caixa -->
+                 
 
             <a class="@Item(On("Financeiro", "FluxoCaixa"))"
                asp-controller="Financeiro"
@@ -124,29 +127,15 @@
 
             </a>
 
-            <!-- =================================================
-                 CADASTROS
-                 ================================================= -->
+            <!-- Cadastros -->
 
               <a class="@Item(On("Cadastro"))"
                asp-controller="Cadastro"
                asp-action="Index">
 
-                <i class="bi bi-box-seam"></i>
+                <i class="bi bi-person"></i>   
 
                 <span>Cadastros</span>
-
-            </a>
-
-
-
-            <!-- Configurações -->
-            <a class="@Item(false)"
-               href="#">
-
-                <i class="bi bi-gear"></i>
-
-                <span>Configurações</span>
 
             </a>
 

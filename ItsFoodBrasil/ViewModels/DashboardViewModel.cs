@@ -5,8 +5,8 @@ namespace ItsFoodBrasil.ViewModels
         public decimal VendasHoje { get; set; }
         public decimal VendasMes { get; set; }
         public decimal SaldoCaixa { get; set; }
-        public decimal ContasPagarProximos7Dias { get; set; }
-        public int QtdContasPagar7Dias { get; set; }
+        public decimal SaidasMes { get; set; }
+        public int QtdSaidasMes { get; set; }
 
         public List<VendaDiaItem> VendasUltimos30Dias { get; set; } = new();
         public List<AlertaProdutoItem> ProdutosValidadeProxima { get; set; } = new();

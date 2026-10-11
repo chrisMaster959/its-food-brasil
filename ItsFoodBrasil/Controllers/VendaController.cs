@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using ItsFoodBrasil.ViewModels;
+using ItsFoodBrasil.Data;
 
 namespace ItsFoodBrasil.Controllers
 {
@@ -12,25 +13,48 @@ namespace ItsFoodBrasil.Controllers
             { "Dinheiro", "Cartão de débito", "Cartão de crédito", "Pix" };
 
         // DADOS DE EXEMPLO em memória. Troque por consulta ao banco quando existir.
-        private static readonly List<PdvProdutoViewModel> Catalogo = new()
-        {
-            new() { IdProduto = 1,  Nome = "Presunto fatiado 200g",      Preco = 12.90m, Estoque = 140 },
-            new() { IdProduto = 2,  Nome = "Mortadela defumada 1kg",     Preco = 24.50m, Estoque = 62 },
-            new() { IdProduto = 3,  Nome = "Salsicha hot dog 500g",      Preco = 9.80m,  Estoque = 220 },
-            new() { IdProduto = 4,  Nome = "Linguiça toscana 1kg",       Preco = 21.90m, Estoque = 8 },
-            new() { IdProduto = 5,  Nome = "Salame italiano 300g",       Preco = 32.00m, Estoque = 45 },
-            new() { IdProduto = 6,  Nome = "Bacon em manta 1kg",         Preco = 38.90m, Estoque = 30 },
-            new() { IdProduto = 7,  Nome = "Peito de peru fatiado 200g", Preco = 15.90m, Estoque = 95 },
-            new() { IdProduto = 8,  Nome = "Apresuntado 1kg",            Preco = 17.50m, Estoque = 25 },
-            new() { IdProduto = 9,  Nome = "Linguiça calabresa 500g",    Preco = 14.90m, Estoque = 80 },
-            new() { IdProduto = 10, Nome = "Queijo mussarela 500g",      Preco = 27.00m, Estoque = 50 },
-        };
+        // O catálogo do caixa vem do estoque: só produtos ATIVOS aparecem para venda.
+private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
+            .Where(p => p.Ativo)
+            .OrderBy(p => p.Nome)
+            .Select(p => new PdvProdutoViewModel
+            {
+                IdProduto = p.IdProduto,
+                Nome = p.Nome,
+                Preco = p.Preco,
+                Estoque = p.QuantidadeEstoque
+            })
+            .ToList();
 
         private static int _ultimaVenda = 1048;
 
-        public IActionResult Index()
+        
+        
+        public IActionResult Index(DateTime? de, DateTime? ate, string? status)
         {
-            return View();
+            IEnumerable<VendaListaItem> query = VendaStore.Vendas;
+
+            if (de.HasValue)
+                query = query.Where(v => v.Data >= de.Value.Date);
+
+            if (ate.HasValue)
+                query = query.Where(v => v.Data < ate.Value.Date.AddDays(1));
+
+            if (!string.IsNullOrWhiteSpace(status))
+                query = query.Where(v => v.Status == status);
+
+            var lista = query.OrderByDescending(v => v.Data).ToList();
+
+            var vm = new VendasIndexViewModel
+            {
+                Vendas = lista,
+                De = de,
+                Ate = ate,
+                Status = status,
+                TotalConcluidas = lista.Where(v => v.Status == "Concluída").Sum(v => v.Valor)
+            };
+
+            return View(vm);
         }
 
         [HttpGet]
@@ -94,9 +118,29 @@ namespace ItsFoodBrasil.Controllers
             // TODO: gravar Venda + ItemVenda no banco (com o funcionário logado) dentro de uma transação.
             // Por enquanto, só baixa o estoque da lista em memória.
             foreach (var item in model.Itens)
-                Catalogo.First(p => p.IdProduto == item.IdProduto).Estoque -= item.Quantidade;
+            ProdutoStore.Produtos.First(p => p.IdProduto == item.IdProduto).QuantidadeEstoque -= item.Quantidade;
 
             var numero = ++_ultimaVenda;
+            VendaStore.Vendas.Add(new VendaListaItem
+            {
+                IdVenda = numero,
+                Data = DateTime.Now,
+                Funcionario = User.Identity?.Name ?? "Funcionário",
+                QtdItens = model.Itens.Sum(i => i.Quantidade),
+                Desconto = desconto,
+                Valor = total,
+                Status = "Concluída",
+                Itens = model.Itens.Select(i =>
+                {
+                    var p = Catalogo.First(c => c.IdProduto == i.IdProduto);
+                    return new VendaItemDetalhe
+                    {
+                        Produto = p.Nome,
+                        PrecoUnitario = p.Preco,
+                        Quantidade = i.Quantidade
+                    };
+                }).ToList()
+            });
             var msg = $"Venda #{numero} finalizada: {total.ToString("C2", PtBr)}";
             if (troco > 0) msg += $" · Troco: {troco.ToString("C2", PtBr)}";
             TempData["Sucesso"] = msg;
@@ -106,7 +150,12 @@ namespace ItsFoodBrasil.Controllers
 
         public IActionResult Details(int id)
         {
-            return View();
+            var venda = VendaStore.Vendas.FirstOrDefault(v => v.IdVenda == id);
+
+            if (venda == null)
+                return NotFound();
+
+            return View(venda);
         }
     }
 }

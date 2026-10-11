@@ -1,54 +1,37 @@
+using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
-using ItsFoodBrasil.ViewModels;
+using ItsFoodBrasil.Data;
 using ItsFoodBrasil.Models;
+using ItsFoodBrasil.ViewModels;
 
 namespace ItsFoodBrasil.Controllers
 {
     public class FinanceiroController : Controller
     {
-        // Saldo de caixa antes da primeira movimentação abaixo.
-        private const decimal SaldoInicial = 12450m;
+        private static readonly CultureInfo PtBr = new("pt-BR");
 
-        // DADOS DE EXEMPLO (em ordem cronológica). Troque por consulta ao banco (DbContext) quando existir.
-        private static readonly List<Movimentacao> Dados = new()
-        {
-            Mov(1,  8,  "Recebimento de vendas",       "Entrada", "Vendas",       12000m),
-            Mov(2,  10, "Pagamento de aluguel",        "Saída",   "Despesas",      6500m),
-            Mov(3,  15, "Recebimento de vendas",       "Entrada", "Vendas",       13250m),
-            Mov(4,  18, "Pagamento fornecedor Frimesa","Saída",   "Fornecedores", 10800m),
-            Mov(5,  20, "Recebimento de vendas",       "Entrada", "Vendas",       15400m),
-            Mov(6,  22, "Pagamento de energia",        "Saída",   "Despesas",      4230m),
-            Mov(7,  24, "Recebimento de vendas",       "Entrada", "Vendas",       12880m),
-            Mov(8,  25, "Compra de mercadorias",       "Saída",   "Compras",       9500m),
-            Mov(9,  26, "Recebimento de vendas",       "Entrada", "Vendas",       14300m),
-            Mov(10, 27, "Recebimento de vendas",       "Entrada", "Vendas",        6190m),
-            Mov(11, 29, "Compra de mercadorias",       "Saída",   "Compras",       8800m),
-            Mov(12, 30, "Recebimento de vendas",       "Entrada", "Vendas",        9760m),
-            Mov(13, 30, "Pagamento de frete",          "Saída",   "Despesas",      1250m),
-            Mov(14, 30, "Recebimento de vendas",       "Entrada", "Vendas",        6230m),
-            Mov(15, 31, "Pagamento fornecedor Frimesa","Saída",   "Fornecedores", 12450m),
-            Mov(16, 31, "Recebimento de vendas",       "Entrada", "Vendas",        8750m),
-        };
+        private static readonly string[] CategoriasEntrada =
+            { "Suprimento de caixa", "Outras entradas" };
 
-        private static Movimentacao Mov(int id, int dia, string desc, string tipo, string cat, decimal valor) =>
-            new() { Id = id, Data = new DateTime(2024, 5, dia), Descricao = desc, Tipo = tipo, Categoria = cat, Valor = valor };
-
-        private static decimal Liquido(IEnumerable<Movimentacao> lista) =>
-            lista.Sum(m => m.Tipo == "Entrada" ? m.Valor : -m.Valor);
+        private static readonly string[] CategoriasSaida =
+            { "Compras", "Fornecedores", "Despesas", "Salários", "Frete", "Impostos", "Outras saídas" };
 
         private static FluxoCaixaViewModel Montar(DateTime? dataInicial, DateTime? dataFinal)
         {
-            DateTime inicio = (dataInicial ?? new DateTime(2024, 5, 1)).Date;
-            DateTime fim = (dataFinal ?? new DateTime(2024, 5, 31)).Date;
+            DateTime fim = (dataFinal ?? DateTime.Today).Date;
+            DateTime inicio = (dataInicial ?? DateTime.Today.AddDays(-30)).Date;
             if (fim < inicio) (inicio, fim) = (fim, inicio);
+
+            var todas = MovimentacaoStore.Todas();
 
             return new FluxoCaixaViewModel
             {
                 DataInicial = inicio,
                 DataFinal = fim,
-                SaldoAnterior = SaldoInicial + Liquido(Dados.Where(m => m.Data.Date < inicio)),
-                Movimentacoes = Dados.Where(m => m.Data.Date >= inicio && m.Data.Date <= fim).ToList()
+                SaldoAnterior = MovimentacaoStore.SaldoInicial
+                                + MovimentacaoStore.Liquido(todas.Where(m => m.Data.Date < inicio)),
+                Movimentacoes = todas.Where(m => m.Data.Date >= inicio && m.Data.Date <= fim).ToList()
             };
         }
 
@@ -57,12 +40,85 @@ namespace ItsFoodBrasil.Controllers
             return View(Montar(dataInicial, dataFinal));
         }
 
+        // ---------- NOVA MOVIMENTAÇÃO ----------
+
+        private static NovaMovimentacaoViewModel PreencherListas(NovaMovimentacaoViewModel vm)
+        {
+            vm.CategoriasEntrada = CategoriasEntrada;
+            vm.CategoriasSaida = CategoriasSaida;
+            return vm;
+        }
+
+        [HttpGet]
+        public IActionResult Nova()
+        {
+            return View(PreencherListas(new NovaMovimentacaoViewModel()));
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult Nova(NovaMovimentacaoViewModel model)
+        {
+            PreencherListas(model);
+
+            // tipo e categoria precisam ser coerentes (validado no servidor, não só no navegador)
+            if (model.Tipo != "Entrada" && model.Tipo != "Saída")
+            {
+                ModelState.AddModelError(nameof(model.Tipo), "Tipo inválido.");
+            }
+            else
+            {
+                var permitidas = model.Tipo == "Entrada" ? CategoriasEntrada : CategoriasSaida;
+                if (!string.IsNullOrEmpty(model.Categoria) && !permitidas.Contains(model.Categoria))
+                    ModelState.AddModelError(nameof(model.Categoria), "Categoria inválida para esse tipo.");
+            }
+
+            decimal valor = 0;
+            if (!string.IsNullOrWhiteSpace(model.Valor) &&
+                (!decimal.TryParse(model.Valor, NumberStyles.Number, PtBr, out valor) || valor <= 0))
+            {
+                ModelState.AddModelError(nameof(model.Valor), "Informe um valor maior que zero.");
+            }
+
+            if (!ModelState.IsValid)
+                return View(model);
+
+            var data = model.Data!.Value.Date;
+
+            // TODO: gravar no banco (DbContext) quando existir.
+            MovimentacaoStore.Dados.Add(new Movimentacao
+            {
+                Id = MovimentacaoStore.ProximoId(),
+                Data = data,
+                Descricao = model.Descricao.Trim(),
+                Tipo = model.Tipo,
+                Categoria = model.Categoria,
+                Valor = valor
+            });
+
+            TempData["Sucesso"] = $"{model.Tipo} de {valor.ToString("C2", PtBr)} registrada.";
+
+            // se a data estiver fora do período padrão, abre um período que a inclua
+            var inicio = DateTime.Today.AddDays(-30);
+            var fim = DateTime.Today;
+            if (data < inicio) inicio = data;
+            if (data > fim) fim = data;
+
+            return RedirectToAction(nameof(FluxoCaixa), new
+            {
+                dataInicial = inicio.ToString("yyyy-MM-dd"),
+                dataFinal = fim.ToString("yyyy-MM-dd")
+            });
+        }
+
+        // ---------- EXPORTAR ----------
+
         public IActionResult ExportarCsv(DateTime? dataInicial, DateTime? dataFinal)
         {
             var vm = Montar(dataInicial, dataFinal);
             var sb = new StringBuilder("Data;Descricao;Tipo;Categoria;Valor\r\n");
             foreach (var m in vm.Movimentacoes.OrderBy(m => m.Data).ThenBy(m => m.Id))
-                sb.Append($"{m.Data:dd/MM/yyyy};{m.Descricao};{m.Tipo};{m.Categoria};{m.Valor:F2}\r\n");
+                sb.Append($"{m.Data:dd/MM/yyyy};{m.Descricao.Replace(";", ",")};{m.Tipo};{m.Categoria};{m.Valor:F2}\r\n");
 
             var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
             return File(bytes, "text/csv", "fluxo-de-caixa.csv");

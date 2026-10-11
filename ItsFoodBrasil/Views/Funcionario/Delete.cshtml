@@ -1,0 +1,97 @@
+@model ItsFoodBrasil.ViewModels.FuncionarioDeleteViewModel
+
+@{
+    ViewData["Title"] = "Excluir cadastro";
+}
+
+<style>
+    .del-card { padding:24px; max-width:640px; }
+    .del-card dl { display:grid; grid-template-columns:150px 1fr; gap:10px 16px; margin:0 0 20px; }
+    .del-card dt { color:#777; font-size:.75rem; font-weight:600; text-transform:uppercase; align-self:center; }
+    .del-card dd { margin:0; }
+    .del-aviso { background:#fff7e0; color:#8a6100; border-radius:8px; padding:12px 16px; margin-bottom:20px; }
+    .del-aviso ul { margin:6px 0 0 18px; padding:0; }
+    .del-acoes { display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
+    .btn-perigo { background:#b3261e !important; border-color:#b3261e !important; color:#fff !important; }
+</style>
+
+<div class="financeiro-page">
+
+    <div class="page-head">
+        <div>
+            <h2>Excluir cadastro</h2>
+            <p class="muted">Confirme antes de excluir. Essa ação não pode ser desfeita.</p>
+        </div>
+        <a asp-controller="Cadastro" asp-action="Index" class="btn-outline">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+    </div>
+
+    <div class="card del-card">
+
+        <dl>
+            <dt>Nome</dt>
+            <dd><strong>@Model.Nome</strong></dd>
+
+            <dt>E-mail</dt>
+            <dd>@Model.Email</dd>
+
+            <dt>Perfil</dt>
+            <dd>@Model.Perfil</dd>
+
+            <dt>Status</dt>
+            <dd>
+                @if (Model.Ativo)
+                {
+                    <span class="badge badge-ok">Ativo</span>
+                }
+                else
+                {
+                    <span class="badge badge-off">Inativo</span>
+                }
+            </dd>
+
+            <dt>Vendas registradas</dt>
+            <dd>@Model.QtdVendas</dd>
+        </dl>
+
+        @if (!Model.PodeExcluir)
+        {
+            <div class="del-aviso">
+                <strong>Este cadastro não pode ser excluído:</strong>
+                <ul>
+                    @if (Model.QtdVendas > 0)
+                    {
+                        <li>Tem @Model.QtdVendas venda(s) registrada(s). Excluir apagaria o histórico. Desative o cadastro em vez de excluir.</li>
+                    }
+                    @if (Model.UltimoAdmin)
+                    {
+                        <li>É o único administrador ativo do sistema.</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="del-acoes">
+            <a asp-controller="Cadastro" asp-action="Index" class="btn-outline">Cancelar</a>
+
+            @if (!Model.PodeExcluir && Model.Ativo && !Model.UltimoAdmin)
+            {
+                <form asp-action="AlternarStatus" asp-route-id="@Model.Id" method="post">
+                    <button type="submit" class="btn-outline">
+                        <i class="bi bi-eye-slash"></i> Desativar em vez de excluir
+                    </button>
+                </form>
+            }
+
+            @if (Model.PodeExcluir)
+            {
+                <form asp-action="Delete" asp-route-id="@Model.Id" method="post">
+                    <button type="submit" class="btn-primary btn-perigo">
+                        <i class="bi bi-trash"></i> Excluir definitivamente
+                    </button>
+                </form>
+            }
+        </div>
+    </div>
+</div>

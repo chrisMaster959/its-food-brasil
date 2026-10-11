@@ -26,19 +26,29 @@
 
 
         <!-- Exportar -->
-        <a asp-controller="Financeiro"
-           asp-action="ExportarCsv"
-           asp-route-dataInicial="@Model.DataInicial.ToString("yyyy-MM-dd")"
-           asp-route-dataFinal="@Model.DataFinal.ToString("yyyy-MM-dd")"
-           class="btn-outline">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
 
-            <i class="bi bi-download"></i>
+            <a asp-controller="Financeiro" asp-action="Nova" class="btn-primary">
+                <i class="bi bi-plus-lg"></i> Nova movimentação
+            </a>
 
-            Exportar CSV
+            <a asp-controller="Financeiro"
+            asp-action="ExportarCsv"
+            asp-route-dataInicial="@Model.DataInicial.ToString("yyyy-MM-dd")"
+            asp-route-dataFinal="@Model.DataFinal.ToString("yyyy-MM-dd")"
+            class="btn-outline">
+                <i class="bi bi-download"></i> Exportar CSV
+            </a>
 
-        </a>
+        </div>  
 
     </div>
+    @if (TempData["Sucesso"] is string sucesso)
+    {
+        <div style="background:#e3f4e6; color:#1e7a34; padding:10px 14px; border-radius:8px; margin-bottom:16px;">
+            @sucesso
+        </div>
+    }
 
 
     <!-- =====================================================

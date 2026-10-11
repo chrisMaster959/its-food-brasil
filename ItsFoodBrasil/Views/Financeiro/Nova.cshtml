@@ -1,0 +1,149 @@
+@model ItsFoodBrasil.ViewModels.NovaMovimentacaoViewModel
+
+@{
+    ViewData["Title"] = "Nova movimentação";
+    var categorias = Model.Tipo == "Entrada" ? Model.CategoriasEntrada : Model.CategoriasSaida;
+}
+
+<style>
+    .nova-mov { padding:24px; max-width:640px; }
+    .nova-mov .campo { margin-bottom:18px; }
+    .nova-mov .linha { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .nova-mov .rotulo { display:block; font-size:.75rem; font-weight:600; color:#777; margin-bottom:6px; text-transform:uppercase; letter-spacing:.03em; }
+    .nova-mov input[type=text], .nova-mov input[type=date], .nova-mov select {
+        width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:8px; background:#fff; font:inherit;
+    }
+    .nova-mov .campo-erro { color:#b3261e; font-size:.8rem; display:block; margin-top:4px; }
+    .nova-mov .form-erro { background:#fde6e6; color:#b3261e; border-radius:8px; padding:10px 14px; margin-bottom:16px; }
+    .nova-mov .form-erro:empty { display:none; }
+    .nova-mov .acoes { display:flex; gap:10px; justify-content:flex-end; margin-top:8px; }
+
+    .tipo-toggle { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .tipo-op { position:relative; }
+    .tipo-op input { position:absolute; opacity:0; pointer-events:none; }
+    .tipo-op span {
+        display:flex; justify-content:center; align-items:center; gap:8px; padding:12px;
+        border:2px solid #ddd; border-radius:10px; cursor:pointer; font-weight:600; color:#777;
+    }
+    .tipo-entrada input:checked + span { border-color:#1e7a34; background:#e3f4e6; color:#1e7a34; }
+    .tipo-saida input:checked + span { border-color:#b3261e; background:#fde6e6; color:#b3261e; }
+    .tipo-op input:focus-visible + span { outline:2px solid #5a1a2b; outline-offset:2px; }
+
+    .valor-wrap { position:relative; }
+    .valor-wrap .rs { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#777; font-size:.9rem; }
+    .valor-wrap input { padding-left:38px !important; }
+
+    @@media (max-width:560px) { .nova-mov .linha { grid-template-columns:1fr; } }
+</style>
+
+<div class="financeiro-page">
+
+    <div class="page-head">
+        <div>
+            <h2>Nova movimentação</h2>
+            <p class="muted">Registre uma entrada ou saída avulsa no caixa. As vendas entram sozinhas.</p>
+        </div>
+        <a asp-action="FluxoCaixa" class="btn-outline">
+            <i class="bi bi-arrow-left"></i> Voltar
+        </a>
+    </div>
+
+    <form asp-action="Nova" method="post" class="card nova-mov" novalidate>
+
+        <div asp-validation-summary="ModelOnly" class="form-erro"></div>
+
+        <!-- Tipo -->
+        <div class="campo">
+            <span class="rotulo">Tipo</span>
+            <div class="tipo-toggle">
+                <label class="tipo-op tipo-entrada">
+                    <input type="radio" asp-for="Tipo" value="Entrada" />
+                    <span><i class="bi bi-arrow-down-left"></i> Entrada</span>
+                </label>
+                <label class="tipo-op tipo-saida">
+                    <input type="radio" asp-for="Tipo" value="Saída" />
+                    <span><i class="bi bi-arrow-up-right"></i> Saída</span>
+                </label>
+            </div>
+            <span asp-validation-for="Tipo" class="campo-erro"></span>
+        </div>
+
+        <!-- Data e valor -->
+        <div class="linha">
+            <div class="campo">
+                <label class="rotulo" for="Data">Data</label>
+                <input type="date" asp-for="Data" />
+                <span asp-validation-for="Data" class="campo-erro"></span>
+            </div>
+
+            <div class="campo">
+                <label class="rotulo" for="Valor">Valor</label>
+                <div class="valor-wrap">
+                    <span class="rs">R$</span>
+                    <input type="text" asp-for="Valor" inputmode="numeric" autocomplete="off" placeholder="0,00" />
+                </div>
+                <span asp-validation-for="Valor" class="campo-erro"></span>
+            </div>
+        </div>
+
+        <!-- Categoria -->
+        <div class="campo">
+            <label class="rotulo" for="Categoria">Categoria</label>
+            <select id="Categoria" name="Categoria">
+                <option value="">Selecione...</option>
+                @foreach (var c in categorias)
+                {
+                    <option value="@c" selected="@(Model.Categoria == c)">@c</option>
+                }
+            </select>
+            <span asp-validation-for="Categoria" class="campo-erro"></span>
+        </div>
+
+        <!-- Descrição -->
+        <div class="campo">
+            <label class="rotulo" for="Descricao">Descrição</label>
+            <input type="text" asp-for="Descricao" maxlength="200" placeholder="Ex.: Pagamento fornecedor Frimesa" />
+            <span asp-validation-for="Descricao" class="campo-erro"></span>
+        </div>
+
+        <div class="acoes">
+            <a asp-action="FluxoCaixa" class="btn-outline">Cancelar</a>
+            <button type="submit" class="btn-primary">
+                <i class="bi bi-check-lg"></i> Salvar movimentação
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    (function () {
+        // categorias mudam conforme o tipo (Entrada/Saída)
+        const categorias = {
+            "Entrada": @Json.Serialize(Model.CategoriasEntrada),
+            "Saída": @Json.Serialize(Model.CategoriasSaida)
+        };
+        const select = document.getElementById('Categoria');
+
+        document.querySelectorAll('input[name="Tipo"]').forEach(function (radio) {
+            radio.addEventListener('change', function () {
+                select.innerHTML = '<option value="">Selecione...</option>';
+                categorias[radio.value].forEach(function (c) {
+                    const o = document.createElement('option');
+                    o.value = c;
+                    o.textContent = c;
+                    select.appendChild(o);
+                });
+            });
+        });
+
+        // máscara de dinheiro: digita só números e vira 1.234,56
+        const valor = document.getElementById('Valor');
+        valor.addEventListener('input', function () {
+            const d = valor.value.replace(/\D/g, '').replace(/^0+/, '');
+            if (!d) { valor.value = ''; return; }
+            const n = d.padStart(3, '0');
+            const inteiro = n.slice(0, -2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+            valor.value = inteiro + ',' + n.slice(-2);
+        });
+    })();
+</script>

@@ -8,6 +8,7 @@ namespace ItsFoodBrasil.Models
 
         public int IdPerfil { get; set; }
 
+        //Ativo ou inativo
         public string Status { get; set; } = string.Empty;
 
 
