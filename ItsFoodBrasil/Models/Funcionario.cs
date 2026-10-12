@@ -15,9 +15,7 @@ namespace ItsFoodBrasil.Models
         // FK -> Pessoa
         public Pessoa Pessoa { get; set; } = null!;
 
-
-        // FK -> Perfil
-        public Perfil Perfil { get; set; } = null!;
+        public string Perfil { get; set; } = null!;
 
 
         // Relacionamento com Venda
