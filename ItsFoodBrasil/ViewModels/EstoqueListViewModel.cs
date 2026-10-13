@@ -13,6 +13,10 @@ namespace ItsFoodBrasil.ViewModels
         public int? IdCategoria { get; set; }
         public string? Situacao { get; set; }
 
+        // Ordenação
+        public string Ordenar { get; set; } = "produto";
+        public string Direcao { get; set; } = "asc";
+
         public List<Categoria> Categorias { get; set; } = new();
         public List<ProdutoLinhaViewModel> Produtos { get; set; } = new();
 

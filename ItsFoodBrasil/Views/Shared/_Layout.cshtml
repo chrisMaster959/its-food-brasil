@@ -63,8 +63,6 @@
                 <img src="~/Assets/logo-itsfoodmedium.png"/>
             </div>
 
-            <strong>Its Food Brasil</strong>
-
             <small>
                 Distribuição de Embutidos
             </small>
@@ -91,13 +89,25 @@
 
 
             <!-- Caixa / PDV -->
-            <a class="@Item(On("Venda"))"
+            <a class="@Item(On("Venda", "Create"))"
                asp-controller="Venda"
                asp-action="Create">
 
                 <i class="bi bi-cash-stack"></i>
 
                 <span>Caixa / PDV</span>
+
+            </a>
+
+
+            <!-- Vendas -->
+            <a class="@Item(On("Venda") && act != "Create")"
+               asp-controller="Venda"
+               asp-action="Index">
+
+                <i class="bi bi-receipt"></i>
+
+                <span>Vendas</span>
 
             </a>
 

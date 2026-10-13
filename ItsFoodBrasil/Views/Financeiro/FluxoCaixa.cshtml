@@ -36,6 +36,8 @@
             asp-action="ExportarCsv"
             asp-route-dataInicial="@Model.DataInicial.ToString("yyyy-MM-dd")"
             asp-route-dataFinal="@Model.DataFinal.ToString("yyyy-MM-dd")"
+            asp-route-tipo="@Model.Tipo"
+            asp-route-categoria="@Model.Categoria"
             class="btn-outline">
                 <i class="bi bi-download"></i> Exportar CSV
             </a>
@@ -49,6 +51,12 @@
             @sucesso
         </div>
     }
+    @if (!string.IsNullOrEmpty(Model.Erro))
+    {
+        <div class="alert-erro">
+            <i class="bi bi-exclamation-circle"></i> @Model.Erro
+        </div>
+    }
 
 
     <!-- =====================================================
@@ -60,7 +68,12 @@
         <form asp-controller="Financeiro"
               asp-action="FluxoCaixa"
               method="get"
-              class="financeiro-filter-form">
+              class="financeiro-filter-form"
+              data-filtro-datas>
+
+            <!-- mantém a ordenação ao filtrar -->
+            <input type="hidden" name="ordenar" value="@Model.Ordenar" />
+            <input type="hidden" name="direcao" value="@Model.Direcao" />
 
 
             <!-- Data inicial -->
@@ -73,6 +86,7 @@
                 <input type="date"
                        id="dataInicial"
                        name="dataInicial"
+                       data-data-inicial
                        value="@Model.DataInicial.ToString("yyyy-MM-dd")" />
 
             </div>
@@ -88,7 +102,52 @@
                 <input type="date"
                        id="dataFinal"
                        name="dataFinal"
+                       data-data-final
                        value="@Model.DataFinal.ToString("yyyy-MM-dd")" />
+
+            </div>
+
+
+            <!-- Tipo -->
+            <div class="filter-field">
+
+                <label for="tipo">
+                    Tipo
+                </label>
+
+                <select id="tipo" name="tipo">
+                    <option value="">Todos</option>
+                    <option value="Entrada" selected="@(Model.Tipo == "Entrada")">Entrada</option>
+                    <option value="Saída" selected="@(Model.Tipo == "Saída")">Saída</option>
+                </select>
+
+            </div>
+
+
+            <!-- Categoria -->
+            <div class="filter-field">
+
+                <label for="categoria">
+                    Categoria
+                </label>
+
+                <select id="categoria" name="categoria">
+                    <option value="">Todas</option>
+
+                    <optgroup label="Entradas">
+                        @foreach (var c in Model.CategoriasEntrada)
+                        {
+                            <option value="@c" selected="@(Model.Categoria == c)">@c</option>
+                        }
+                    </optgroup>
+
+                    <optgroup label="Saídas">
+                        @foreach (var c in Model.CategoriasSaida)
+                        {
+                            <option value="@c" selected="@(Model.Categoria == c)">@c</option>
+                        }
+                    </optgroup>
+                </select>
 
             </div>
 
@@ -102,6 +161,17 @@
                 Filtrar
 
             </button>
+
+            @if (Model.FiltrandoTipoCategoria)
+            {
+                <a class="btn-outline"
+                   asp-controller="Financeiro"
+                   asp-action="FluxoCaixa"
+                   asp-route-dataInicial="@Model.DataInicial.ToString("yyyy-MM-dd")"
+                   asp-route-dataFinal="@Model.DataFinal.ToString("yyyy-MM-dd")">
+                    Limpar
+                </a>
+            }
 
         </form>
 
@@ -292,25 +362,11 @@
 
                     <tr>
 
-                        <th>
-                            DATA
-                        </th>
-
-                        <th>
-                            DESCRIÇÃO
-                        </th>
-
-                        <th>
-                            CATEGORIA
-                        </th>
-
-                        <th>
-                            TIPO
-                        </th>
-
-                        <th style="text-align:right;">
-                            VALOR
-                        </th>
+                        <partial name="_ThSort" model='new SortHeaderModel { Titulo = "DATA", Campo = "data", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                        <partial name="_ThSort" model='new SortHeaderModel { Titulo = "DESCRIÇÃO", Campo = "descricao", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                        <partial name="_ThSort" model='new SortHeaderModel { Titulo = "CATEGORIA", Campo = "categoria", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                        <partial name="_ThSort" model='new SortHeaderModel { Titulo = "TIPO", Campo = "tipo", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                        <partial name="_ThSort" model='new SortHeaderModel { Titulo = "VALOR", Campo = "valor", Ordenar = Model.Ordenar, Direcao = Model.Direcao, AlinharDireita = true }' />
 
                     </tr>
 
@@ -322,9 +378,7 @@
                     @if (Model.Movimentacoes.Any())
                     {
 
-                        foreach (var item in Model.Movimentacoes
-                            .OrderBy(x => x.Data)
-                            .ThenBy(x => x.Id))
+                        foreach (var item in Model.Movimentacoes)
                         {
 
                             bool entrada = item.Tipo == "Entrada";
@@ -416,7 +470,7 @@
                                 class="center muted">
 
                                 Nenhuma movimentação encontrada
-                                no período selecionado.
+                                para o período e filtros selecionados.
 
                             </td>
 
@@ -433,3 +487,5 @@
     </div>
 
 </div>
+
+<script src="~/js/filtro-datas.js"></script>

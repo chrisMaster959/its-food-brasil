@@ -8,6 +8,11 @@ namespace ItsFoodBrasil.ViewModels
 
         public string? Situacao { get; set; }
 
+        // ordenação (vazio = ordem original da lista)
+        public string? Ordenar { get; set; }
+
+        public string? Direcao { get; set; }
+
         public int TotalFuncionarios { get; set; }
 
         public int FuncionariosAtivos { get; set; }

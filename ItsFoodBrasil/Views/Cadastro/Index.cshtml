@@ -48,6 +48,12 @@
 
 <form method="get" class="card filters">
 
+@if (!string.IsNullOrEmpty(Model.Ordenar))
+{
+    <input type="hidden" name="ordenar" value="@Model.Ordenar" />
+    <input type="hidden" name="direcao" value="@Model.Direcao" />
+}
+
 <div class="search-box">
 
 <i class="bi bi-search"></i>
@@ -122,15 +128,11 @@ Novo Funcionário
 
 <tr>
 
-<th>NOME</th>
-
-<th>TIPO</th>
-
-<th>USUÁRIO</th>
-
-<th>PERFIL</th>
-
-<th>STATUS</th>
+<partial name="_ThSort" model='new SortHeaderModel { Titulo = "NOME", Campo = "nome", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+<partial name="_ThSort" model='new SortHeaderModel { Titulo = "TIPO", Campo = "tipo", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+<partial name="_ThSort" model='new SortHeaderModel { Titulo = "USUÁRIO", Campo = "usuario", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+<partial name="_ThSort" model='new SortHeaderModel { Titulo = "PERFIL", Campo = "perfil", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+<partial name="_ThSort" model='new SortHeaderModel { Titulo = "STATUS", Campo = "status", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
 
 <th></th>
 

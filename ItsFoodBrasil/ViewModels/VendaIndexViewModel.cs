@@ -33,5 +33,12 @@ namespace ItsFoodBrasil.ViewModels
         public string? Status { get; set; }
 
         public decimal TotalConcluidas { get; set; }
+
+        // ordenação
+        public string Ordenar { get; set; } = "data";
+        public string Direcao { get; set; } = "desc";
+
+        // mensagem de validação (ex.: data inicial maior que a final)
+        public string? Erro { get; set; }
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using ItsFoodBrasil.Models;
 using ItsFoodBrasil.ViewModels;
 using ItsFoodBrasil.Data;
+using ItsFoodBrasil.Helpers;
 namespace ItsFoodBrasil.Controllers
 {
     public class ProdutoController : Controller
@@ -14,10 +15,15 @@ namespace ItsFoodBrasil.Controllers
         // ESTOQUE
         // ============================================================
 
+        private static readonly string[] CamposOrdenacao =
+            { "produto", "categoria", "preco", "estoque", "validade", "status" };
+
         public ActionResult Index(
             string? busca,
             int? idCategoria,
-            string? situacao)
+            string? situacao,
+            string? ordenar,
+            string? direcao)
         {
             var todos = Produtos
                 .Select(p => new ProdutoLinhaViewModel
@@ -79,16 +85,35 @@ namespace ItsFoodBrasil.Controllers
                 .Where(p => p.Ativo)
                 .ToList();
 
+            // ordenação (padrão: nome crescente)
+            bool ordemValida = ordenar != null && CamposOrdenacao.Contains(ordenar);
+            string campo = ordemValida ? ordenar! : "produto";
+            bool desc = ordemValida && Ordenacao.Desc(direcao);
+
+            var ordenados = campo switch
+            {
+                "categoria" => lista.Por(p => p.Categoria, desc),
+                "preco" => lista.Por(p => p.Preco, desc),
+                "estoque" => lista.Por(p => p.Estoque, desc),
+                // produtos sem validade ficam sempre no final
+                "validade" => lista.Por(p => p.Validade ?? (desc ? DateTime.MinValue : DateTime.MaxValue), desc),
+                // crescente: ativos primeiro
+                "status" => lista.Por(p => p.Ativo ? 0 : 1, desc),
+                _ => lista.Por(p => p.Nome, desc)
+            };
+
             var vm = new ProdutoListViewModel
             {
                 Busca = busca,
                 IdCategoria = idCategoria,
                 Situacao = situacao,
+                Ordenar = campo,
+                Direcao = desc ? "desc" : "asc",
 
                 Categorias = Categorias,
 
-                Produtos = lista
-                    .OrderBy(p => p.Nome)
+                Produtos = ordenados
+                    .ThenBy(p => p.Nome)
                     .ToList(),
 
                 ProdutosAtivos = ativos.Count,

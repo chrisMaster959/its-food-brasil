@@ -29,14 +29,24 @@
         <a class="btn-outline" asp-controller="Venda" asp-action="Create">Nova venda</a>
     </div>
 
-    <form method="get" class="filtros">
+    @if (!string.IsNullOrEmpty(Model.Erro))
+    {
+        <div class="alert-erro" style="margin:0 20px 12px;">
+            <i class="bi bi-exclamation-circle"></i> @Model.Erro
+        </div>
+    }
+
+    <form method="get" class="filtros" data-filtro-datas>
+        <!-- mantém a ordenação ao filtrar -->
+        <input type="hidden" name="ordenar" value="@Model.Ordenar" />
+        <input type="hidden" name="direcao" value="@Model.Direcao" />
         <div>
             <label>De</label>
-            <input type="date" name="de" value="@Model.De?.ToString("yyyy-MM-dd")" />
+            <input type="date" name="de" data-data-inicial value="@Model.De?.ToString("yyyy-MM-dd")" />
         </div>
         <div>
             <label>Até</label>
-            <input type="date" name="ate" value="@Model.Ate?.ToString("yyyy-MM-dd")" />
+            <input type="date" name="ate" data-data-final value="@Model.Ate?.ToString("yyyy-MM-dd")" />
         </div>
         <div>
             <label>Status</label>
@@ -62,13 +72,13 @@
         <table class="grid">
             <thead>
                 <tr>
-                    <th>VENDA</th>
-                    <th>DATA</th>
-                    <th>FUNCIONÁRIO</th>
-                    <th>ITENS</th>
-                    <th>DESCONTO</th>
-                    <th>VALOR</th>
-                    <th>STATUS</th>
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "VENDA", Campo = "venda", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "DATA", Campo = "data", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "FUNCIONÁRIO", Campo = "funcionario", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "ITENS", Campo = "itens", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "DESCONTO", Campo = "desconto", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "VALOR", Campo = "valor", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "STATUS", Campo = "status", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
                 </tr>
             </thead>
             <tbody>
@@ -92,3 +102,5 @@
         </table>
     </div>
 </section>
+
+<script src="~/js/filtro-datas.js"></script>

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using ItsFoodBrasil.Data;
+using ItsFoodBrasil.Helpers;
 using ItsFoodBrasil.Models;
 using ItsFoodBrasil.ViewModels;
 
@@ -17,13 +18,55 @@ namespace ItsFoodBrasil.Controllers
         private static readonly string[] CategoriasSaida =
             { "Compras", "Fornecedores", "Despesas", "Salários", "Frete", "Impostos", "Outras saídas" };
 
-        private static FluxoCaixaViewModel Montar(DateTime? dataInicial, DateTime? dataFinal)
+        private static readonly string[] CamposOrdenacao =
+            { "data", "descricao", "categoria", "tipo", "valor" };
+
+        private static FluxoCaixaViewModel Montar(
+            DateTime? dataInicial, DateTime? dataFinal,
+            string? tipo, string? categoria,
+            string? ordenar, string? direcao)
         {
+            string? erro = null;
             DateTime fim = (dataFinal ?? DateTime.Today).Date;
             DateTime inicio = (dataInicial ?? DateTime.Today.AddDays(-30)).Date;
-            if (fim < inicio) (inicio, fim) = (fim, inicio);
+
+            // data inicial maior que a final não é permitido (validado também no servidor):
+            // volta para o período padrão e avisa
+            if (inicio > fim)
+            {
+                erro = "A data inicial não pode ser maior que a data final.";
+                inicio = DateTime.Today.AddDays(-30);
+                fim = DateTime.Today;
+            }
+
+            if (tipo != "Entrada" && tipo != "Saída") tipo = null;
+            if (string.IsNullOrWhiteSpace(categoria)) categoria = null;
 
             var todas = MovimentacaoStore.Todas();
+
+            // período completo (base dos cards de resumo)
+            var periodo = todas
+                .Where(m => m.Data.Date >= inicio && m.Data.Date <= fim)
+                .ToList();
+
+            // filtros da tabela
+            IEnumerable<Movimentacao> filtradas = periodo;
+            if (tipo != null) filtradas = filtradas.Where(m => m.Tipo == tipo);
+            if (categoria != null) filtradas = filtradas.Where(m => m.Categoria == categoria);
+
+            // ordenação (padrão: data crescente)
+            bool ordemValida = ordenar != null && CamposOrdenacao.Contains(ordenar);
+            string campo = ordemValida ? ordenar! : "data";
+            bool desc = ordemValida && Ordenacao.Desc(direcao);
+
+            IOrderedEnumerable<Movimentacao> ordenadas = campo switch
+            {
+                "descricao" => filtradas.Por(m => m.Descricao, desc),
+                "categoria" => filtradas.Por(m => m.Categoria, desc),
+                "tipo" => filtradas.Por(m => m.Tipo, desc),
+                "valor" => filtradas.Por(m => m.Valor, desc),
+                _ => filtradas.Por(m => m.Data, desc)
+            };
 
             return new FluxoCaixaViewModel
             {
@@ -31,13 +74,24 @@ namespace ItsFoodBrasil.Controllers
                 DataFinal = fim,
                 SaldoAnterior = MovimentacaoStore.SaldoInicial
                                 + MovimentacaoStore.Liquido(todas.Where(m => m.Data.Date < inicio)),
-                Movimentacoes = todas.Where(m => m.Data.Date >= inicio && m.Data.Date <= fim).ToList()
+                MovimentacoesPeriodo = periodo,
+                Movimentacoes = ordenadas.ThenBy(m => m.Id).ToList(),
+                Tipo = tipo,
+                Categoria = categoria,
+                CategoriasEntrada = new[] { "Vendas" }.Concat(CategoriasEntrada).ToArray(),
+                CategoriasSaida = CategoriasSaida,
+                Ordenar = campo,
+                Direcao = desc ? "desc" : "asc",
+                Erro = erro
             };
         }
 
-        public IActionResult FluxoCaixa(DateTime? dataInicial, DateTime? dataFinal)
+        public IActionResult FluxoCaixa(
+            DateTime? dataInicial, DateTime? dataFinal,
+            string? tipo, string? categoria,
+            string? ordenar, string? direcao)
         {
-            return View(Montar(dataInicial, dataFinal));
+            return View(Montar(dataInicial, dataFinal, tipo, categoria, ordenar, direcao));
         }
 
         // ---------- NOVA MOVIMENTAÇÃO ----------
@@ -113,9 +167,9 @@ namespace ItsFoodBrasil.Controllers
 
         // ---------- EXPORTAR ----------
 
-        public IActionResult ExportarCsv(DateTime? dataInicial, DateTime? dataFinal)
+        public IActionResult ExportarCsv(DateTime? dataInicial, DateTime? dataFinal, string? tipo, string? categoria)
         {
-            var vm = Montar(dataInicial, dataFinal);
+            var vm = Montar(dataInicial, dataFinal, tipo, categoria, null, null);
             var sb = new StringBuilder("Data;Descricao;Tipo;Categoria;Valor\r\n");
             foreach (var m in vm.Movimentacoes.OrderBy(m => m.Data).ThenBy(m => m.Id))
                 sb.Append($"{m.Data:dd/MM/yyyy};{m.Descricao.Replace(";", ",")};{m.Tipo};{m.Categoria};{m.Valor:F2}\r\n");

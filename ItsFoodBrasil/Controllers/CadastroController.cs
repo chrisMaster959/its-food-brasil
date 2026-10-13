@@ -1,11 +1,15 @@
 using Microsoft.AspNetCore.Mvc;
 using ItsFoodBrasil.Data;
+using ItsFoodBrasil.Helpers;
 using ItsFoodBrasil.ViewModels;
 
 public class CadastroController : Controller
 {
+    private static readonly string[] CamposOrdenacao =
+        { "nome", "tipo", "usuario", "perfil", "status" };
+
     [HttpGet]
-    public IActionResult Index(string? busca, string? tipo, string? situacao)
+    public IActionResult Index(string? busca, string? tipo, string? situacao, string? ordenar, string? direcao)
     {
         // funcionários
         var todos = CadastroStore.Funcionarios
@@ -67,11 +71,30 @@ public class CadastroController : Controller
         else if (string.Equals(situacao, "inativo", StringComparison.OrdinalIgnoreCase))
             cadastros = cadastros.Where(x => !x.Ativo);
 
+        // ordenação (sem escolha: mantém a ordem original)
+        bool ordemValida = ordenar != null && CamposOrdenacao.Contains(ordenar);
+        bool desc = ordemValida && Ordenacao.Desc(direcao);
+
+        if (ordemValida)
+        {
+            cadastros = (ordenar switch
+            {
+                "tipo" => cadastros.Por(x => x.Tipo, desc),
+                "usuario" => cadastros.Por(x => x.Usuario ?? string.Empty, desc),
+                "perfil" => cadastros.Por(x => x.Perfil ?? string.Empty, desc),
+                // crescente: ativos primeiro
+                "status" => cadastros.Por(x => x.Ativo ? 0 : 1, desc),
+                _ => cadastros.Por(x => x.Nome, desc)
+            }).ThenBy(x => x.Nome);
+        }
+
         var model = new CadastroListViewModel
         {
             Busca = busca,
             Tipo = tipo,
             Situacao = situacao,
+            Ordenar = ordemValida ? ordenar : null,
+            Direcao = ordemValida ? (desc ? "desc" : "asc") : null,
             TotalFuncionarios = totalFuncionarios,
             FuncionariosAtivos = funcionariosAtivos,
             FuncionariosInativos = funcionariosInativos,

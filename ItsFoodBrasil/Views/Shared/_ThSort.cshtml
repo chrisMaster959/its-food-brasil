@@ -1,0 +1,28 @@
+@model SortHeaderModel
+@using Microsoft.AspNetCore.WebUtilities
+@{
+    bool ativo = string.Equals(Model.Ordenar, Model.Campo, StringComparison.OrdinalIgnoreCase);
+    bool desc = ativo && string.Equals(Model.Direcao, "desc", StringComparison.OrdinalIgnoreCase);
+
+    // 1º clique: crescente · clique seguinte: inverte
+    string proxima = ativo && !desc ? "desc" : "asc";
+
+    // mantém os filtros que já estão na URL e troca só a ordenação
+    var parametros = new Dictionary<string, string?>();
+    foreach (var q in Context.Request.Query)
+    {
+        if (q.Key == "ordenar" || q.Key == "direcao") continue;
+        parametros[q.Key] = q.Value.ToString();
+    }
+    parametros["ordenar"] = Model.Campo;
+    parametros["direcao"] = proxima;
+
+    var href = QueryHelpers.AddQueryString(
+        (Context.Request.PathBase + Context.Request.Path).ToString(), parametros);
+}
+<th class="th-sort@(Model.AlinharDireita ? " th-right" : "")">
+    <a href="@href" class="sort-link @(ativo ? "active" : "")" title="Ordenar por @Model.Titulo.ToLower()">
+        @Model.Titulo
+        <i class="bi @(ativo ? (desc ? "bi-caret-down-fill" : "bi-caret-up-fill") : "bi-chevron-expand")"></i>
+    </a>
+</th>

@@ -2,6 +2,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using ItsFoodBrasil.ViewModels;
 using ItsFoodBrasil.Data;
+using ItsFoodBrasil.Helpers;
 
 namespace ItsFoodBrasil.Controllers
 {
@@ -30,8 +31,20 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
 
         
         
-        public IActionResult Index(DateTime? de, DateTime? ate, string? status)
+        private static readonly string[] CamposOrdenacao =
+            { "venda", "data", "funcionario", "itens", "desconto", "valor", "status" };
+
+        public IActionResult Index(DateTime? de, DateTime? ate, string? status, string? ordenar, string? direcao)
         {
+            // data inicial maior que a final não é permitida (validado também no servidor)
+            string? erro = null;
+            if (de.HasValue && ate.HasValue && de.Value.Date > ate.Value.Date)
+            {
+                erro = "A data inicial não pode ser maior que a data final.";
+                de = null;
+                ate = null;
+            }
+
             IEnumerable<VendaListaItem> query = VendaStore.Vendas;
 
             if (de.HasValue)
@@ -43,7 +56,21 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
             if (!string.IsNullOrWhiteSpace(status))
                 query = query.Where(v => v.Status == status);
 
-            var lista = query.OrderByDescending(v => v.Data).ToList();
+            // ordenação (padrão: data, mais recentes primeiro)
+            bool ordemValida = ordenar != null && CamposOrdenacao.Contains(ordenar);
+            string campo = ordemValida ? ordenar! : "data";
+            bool desc = !ordemValida || Ordenacao.Desc(direcao);
+
+            var lista = (campo switch
+            {
+                "venda" => query.Por(v => v.IdVenda, desc),
+                "funcionario" => query.Por(v => v.Funcionario, desc),
+                "itens" => query.Por(v => v.QtdItens, desc),
+                "desconto" => query.Por(v => v.Desconto, desc),
+                "valor" => query.Por(v => v.Valor, desc),
+                "status" => query.Por(v => v.Status, desc),
+                _ => query.Por(v => v.Data, desc)
+            }).ToList();
 
             var vm = new VendasIndexViewModel
             {
@@ -51,7 +78,10 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
                 De = de,
                 Ate = ate,
                 Status = status,
-                TotalConcluidas = lista.Where(v => v.Status == "Concluída").Sum(v => v.Valor)
+                TotalConcluidas = lista.Where(v => v.Status == "Concluída").Sum(v => v.Valor),
+                Ordenar = campo,
+                Direcao = desc ? "desc" : "asc",
+                Erro = erro
             };
 
             return View(vm);

@@ -30,6 +30,10 @@
 </div>
 
 <form method="get" class="card filters">
+    <!-- mantém a ordenação ao filtrar -->
+    <input type="hidden" name="ordenar" value="@Model.Ordenar" />
+    <input type="hidden" name="direcao" value="@Model.Direcao" />
+
     <div class="search-box">
         <i class="bi bi-search"></i>
         <input type="text" name="busca" value="@Model.Busca" placeholder="Buscar por nome..." />
@@ -69,8 +73,13 @@
         <table class="grid">
             <thead>
                 <tr>
-                    <th>PRODUTO</th><th>CATEGORIA</th><th>PREÇO</th><th>ESTOQUE</th>
-                    <th>VALIDADE</th><th>STATUS</th><th></th>
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "PRODUTO", Campo = "produto", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "CATEGORIA", Campo = "categoria", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "PREÇO", Campo = "preco", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "ESTOQUE", Campo = "estoque", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "VALIDADE", Campo = "validade", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <partial name="_ThSort" model='new SortHeaderModel { Titulo = "STATUS", Campo = "status", Ordenar = Model.Ordenar, Direcao = Model.Direcao }' />
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
