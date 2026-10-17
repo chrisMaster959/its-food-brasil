@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using ItsFoodBrasil.Models;
 using ItsFoodBrasil.ViewModels;
 using ItsFoodBrasil.Data;
@@ -7,8 +8,9 @@ namespace ItsFoodBrasil.Controllers
 {
     public class ProdutoController : Controller
     {
-        private static List<Categoria> Categorias => ProdutoStore.Categorias;
-        private static List<Produto> Produtos => ProdutoStore.Produtos;
+        // Lidos do banco a cada uso (assim a tela sempre mostra o que está gravado)
+        private static List<Categoria> Categorias => ProdutoStore.Categorias();
+        private static List<Produto> Produtos => ProdutoStore.Produtos();
 
 
         // ============================================================
@@ -25,6 +27,8 @@ namespace ItsFoodBrasil.Controllers
             string? ordenar,
             string? direcao)
         {
+            var categorias = Categorias;
+
             var todos = Produtos
                 .Select(p => new ProdutoLinhaViewModel
                 {
@@ -34,6 +38,7 @@ namespace ItsFoodBrasil.Controllers
                     Categoria = p.Categoria?.Nome ?? "",
                     Preco = p.Preco,
                     Estoque = p.QuantidadeEstoque,
+                    EstoqueMinimo = p.EstoqueMinimo,
                     Validade = p.Validade,
                     Ativo = p.Ativo
                 })
@@ -110,7 +115,7 @@ namespace ItsFoodBrasil.Controllers
                 Ordenar = campo,
                 Direcao = desc ? "desc" : "asc",
 
-                Categorias = Categorias,
+                Categorias = categorias,
 
                 Produtos = ordenados
                     .ThenBy(p => p.Nome)
@@ -184,35 +189,36 @@ namespace ItsFoodBrasil.Controllers
                     "A quantidade não pode ser negativa.");
             }
 
+            if (model.Nome?.Trim().Length > 150)
+                ModelState.AddModelError("Nome", "O nome pode ter no máximo 150 caracteres.");
+
+            if (model.Descricao?.Trim().Length > 500)
+                ModelState.AddModelError("Descricao", "A descrição pode ter no máximo 500 caracteres.");
+
+            var categorias = Categorias;
+
+            if (model.IdCategoria > 0 && !categorias.Any(c => c.IdCategoria == model.IdCategoria))
+                ModelState.AddModelError("IdCategoria", "Categoria inválida.");
+
             if (!ModelState.IsValid)
             {
-                ViewBag.Categorias = Categorias;
+                ViewBag.Categorias = categorias;
 
                 return View(model);
             }
 
-            var categoria = Categorias.FirstOrDefault(
-                c => c.IdCategoria == model.IdCategoria);
-
-            if (categoria == null)
+            try
             {
-                ModelState.AddModelError(
-                    "IdCategoria",
-                    "Categoria inválida.");
-
-                ViewBag.Categorias = Categorias;
+                // grava no banco (procedure sp_CadastrarProduto)
+                ProdutoStore.Criar(model);
+            }
+            catch (SqlException ex)
+            {
+                ModelState.AddModelError(string.Empty, Db.Mensagem(ex));
+                ViewBag.Categorias = categorias;
 
                 return View(model);
             }
-
-            // Gera o próximo código.
-            model.IdProduto = Produtos.Any()
-                ? Produtos.Max(p => p.IdProduto) + 1
-                : 1;
-
-            model.Categoria = categoria;
-
-            Produtos.Add(model);
 
             TempData["Sucesso"] =
                 $"Produto \"{model.Nome}\" cadastrado com sucesso!";
@@ -228,8 +234,7 @@ namespace ItsFoodBrasil.Controllers
         [HttpGet]
         public ActionResult Edit(int id)
         {
-            var produto = Produtos.FirstOrDefault(
-                p => p.IdProduto == id);
+            var produto = ProdutoStore.Buscar(id);
 
             if (produto == null)
                 return NotFound();
@@ -258,48 +263,43 @@ namespace ItsFoodBrasil.Controllers
             if (model.QuantidadeEstoque < 0)
                 ModelState.AddModelError("QuantidadeEstoque", "A quantidade não pode ser negativa.");
 
-            var produto = Produtos.FirstOrDefault(p => p.IdProduto == model.IdProduto);
+            if (model.Nome?.Trim().Length > 150)
+                ModelState.AddModelError("Nome", "O nome pode ter no máximo 150 caracteres.");
+
+            if (model.Descricao?.Trim().Length > 500)
+                ModelState.AddModelError("Descricao", "A descrição pode ter no máximo 500 caracteres.");
+
+            var produto = ProdutoStore.Buscar(model.IdProduto);
             if (produto == null)
                 return NotFound();
 
-            var categoria = Categorias.FirstOrDefault(c => c.IdCategoria == model.IdCategoria);
-            if (model.IdCategoria > 0 && categoria == null)
+            var categorias = Categorias;
+
+            if (model.IdCategoria > 0 && !categorias.Any(c => c.IdCategoria == model.IdCategoria))
                 ModelState.AddModelError("IdCategoria", "Categoria inválida.");
 
             if (!ModelState.IsValid)
             {
-                ViewBag.Categorias = Categorias;
+                ViewBag.Categorias = categorias;
                 return View(model);
             }
 
-            var nomeAntigo = produto.Nome;
-            var nomeNovo = model.Nome.Trim();
-
-            produto.IdCategoria = model.IdCategoria;
-            produto.Categoria = categoria!;
-            produto.Nome = nomeNovo;
-            produto.Descricao = model.Descricao;
-            produto.Preco = model.Preco;
-            produto.QuantidadeEstoque = model.QuantidadeEstoque;
-            produto.Validade = model.Validade;
-            produto.Ativo = model.Ativo;
-
-            // enquanto a venda guarda o nome do produto (e não a FK), acompanha a troca de nome
-            if (!nomeAntigo.Equals(nomeNovo, StringComparison.Ordinal))
+            try
             {
-                foreach (var venda in VendaStore.Vendas)
-                    foreach (var item in venda.Itens.Where(i => i.Produto == nomeAntigo))
-                        item.Produto = nomeNovo;
+                // atualiza no banco (procedure sp_AtualizarProduto)
+                ProdutoStore.Atualizar(model);
+            }
+            catch (SqlException ex)
+            {
+                ModelState.AddModelError(string.Empty, Db.Mensagem(ex));
+                ViewBag.Categorias = categorias;
+                return View(model);
             }
 
-            TempData["Sucesso"] = $"Produto \"{produto.Nome}\" atualizado com sucesso!";
+            TempData["Sucesso"] = $"Produto \"{model.Nome.Trim()}\" atualizado com sucesso!";
 
             return RedirectToAction(nameof(Index));
         }
-
-        // vendas que incluem o produto (hoje a venda guarda o nome; no banco será a FK de ItemVenda)
-        private static int QtdVendas(Produto p) =>
-            VendaStore.Vendas.Count(v => v.Itens.Any(i => i.Produto == p.Nome));
 
 
         // ---------- DESATIVAR / REATIVAR (olho) ----------
@@ -308,15 +308,22 @@ namespace ItsFoodBrasil.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult AlternarAtivo(int id)
         {
-            var produto = Produtos.FirstOrDefault(p => p.IdProduto == id);
+            var produto = ProdutoStore.Buscar(id);
             if (produto == null)
                 return NotFound();
 
-            produto.Ativo = !produto.Ativo;
+            try
+            {
+                var ficouAtivo = ProdutoStore.AlternarAtivo(id);
 
-            TempData["Sucesso"] = produto.Ativo
-                ? $"Produto \"{produto.Nome}\" reativado."
-                : $"Produto \"{produto.Nome}\" desativado: não aparece mais no caixa.";
+                TempData["Sucesso"] = ficouAtivo
+                    ? $"Produto \"{produto.Nome}\" reativado."
+                    : $"Produto \"{produto.Nome}\" desativado: não aparece mais no caixa.";
+            }
+            catch (SqlException ex)
+            {
+                TempData["Erro"] = Db.Mensagem(ex);
+            }
 
             return RedirectToAction(nameof(Index));
         }
@@ -327,11 +334,11 @@ namespace ItsFoodBrasil.Controllers
         [HttpGet]
         public ActionResult Delete(int id)
         {
-            var produto = Produtos.FirstOrDefault(p => p.IdProduto == id);
+            var produto = ProdutoStore.Buscar(id);
             if (produto == null)
                 return NotFound();
 
-            ViewBag.QtdVendas = QtdVendas(produto);
+            ViewBag.QtdVendas = ProdutoStore.QtdVendas(id);
 
             return View(produto);
         }
@@ -340,19 +347,27 @@ namespace ItsFoodBrasil.Controllers
         [ValidateAntiForgeryToken]
         public ActionResult DeleteConfirmed(int id)
         {
-            var produto = Produtos.FirstOrDefault(p => p.IdProduto == id);
+            var produto = ProdutoStore.Buscar(id);
             if (produto == null)
                 return NotFound();
 
             // revalida no servidor: produto já vendido não pode ser excluído
-            var qtdVendas = QtdVendas(produto);
+            var qtdVendas = ProdutoStore.QtdVendas(id);
             if (qtdVendas > 0)
             {
                 ViewBag.QtdVendas = qtdVendas;
                 return View("Delete", produto);
             }
 
-            Produtos.Remove(produto);
+            try
+            {
+                ProdutoStore.Excluir(id);
+            }
+            catch (SqlException ex)
+            {
+                TempData["Erro"] = Db.Mensagem(ex);
+                return RedirectToAction(nameof(Index));
+            }
 
             TempData["Sucesso"] = $"Produto \"{produto.Nome}\" excluído com sucesso!";
 

@@ -35,12 +35,13 @@ namespace ItsFoodBrasil.ViewModels
         public string Categoria { get; set; } = string.Empty;
         public decimal Preco { get; set; }
         public int Estoque { get; set; }
+        public int EstoqueMinimo { get; set; } = ProdutoListViewModel.LimiteEstoqueBaixo;
         public string? Lote { get; set; }
         public DateTime? Validade { get; set; }
         public bool Ativo { get; set; }
 
         public bool SemEstoque => Estoque <= 0;
-        public bool EstoqueBaixo => Estoque > 0 && Estoque < ProdutoListViewModel.LimiteEstoqueBaixo;
+        public bool EstoqueBaixo => Estoque > 0 && Estoque < EstoqueMinimo;
 
         public int? DiasParaVencer => Validade.HasValue ? (Validade.Value.Date - DateTime.Today).Days : null;
         public bool Vencido => DiasParaVencer < 0;

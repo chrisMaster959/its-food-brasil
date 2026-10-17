@@ -25,6 +25,12 @@
         @sucesso
     </div>
 }
+@if (TempData["Erro"] is string erroGeral && ViewContext.RouteData.Values["controller"]?.ToString() != "Cadastro")
+{
+    <div style="background:#fde6e6; color:#b3261e; padding:10px 14px; border-radius:8px; margin-bottom:16px;">
+        @erroGeral
+    </div>
+}
 <!DOCTYPE html>
 
 <html lang="pt-BR">
@@ -160,7 +166,7 @@
 
             <div>
                 Usuário:
-                <strong>Admin</strong>
+                <strong>@(User.Identity?.Name ?? "-")</strong>
             </div>
 
             <div>

@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using ItsFoodBrasil.ViewModels;
 using ItsFoodBrasil.Data;
 using ItsFoodBrasil.Helpers;
@@ -13,9 +15,8 @@ namespace ItsFoodBrasil.Controllers
         private static readonly string[] FormasPagamento =
             { "Dinheiro", "Cartão de débito", "Cartão de crédito", "Pix" };
 
-        // DADOS DE EXEMPLO em memória. Troque por consulta ao banco quando existir.
-        // O catálogo do caixa vem do estoque: só produtos ATIVOS aparecem para venda.
-private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
+        // O catálogo do caixa vem do banco: só produtos ATIVOS aparecem para venda.
+        private static List<PdvProdutoViewModel> Catalogo() => ProdutoStore.Produtos()
             .Where(p => p.Ativo)
             .OrderBy(p => p.Nome)
             .Select(p => new PdvProdutoViewModel
@@ -27,10 +28,10 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
             })
             .ToList();
 
-        private static int _ultimaVenda = 1048;
+        // id do funcionário logado (guardado no cookie de login)
+        private int IdFuncionarioLogado() =>
+            int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
 
-        
-        
         private static readonly string[] CamposOrdenacao =
             { "venda", "data", "funcionario", "itens", "desconto", "valor", "status" };
 
@@ -45,16 +46,8 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
                 ate = null;
             }
 
-            IEnumerable<VendaListaItem> query = VendaStore.Vendas;
-
-            if (de.HasValue)
-                query = query.Where(v => v.Data >= de.Value.Date);
-
-            if (ate.HasValue)
-                query = query.Where(v => v.Data < ate.Value.Date.AddDays(1));
-
-            if (!string.IsNullOrWhiteSpace(status))
-                query = query.Where(v => v.Status == status);
+            // o filtro de datas e de status é feito no banco; a ordenação continua aqui
+            IEnumerable<VendaListaItem> query = VendaStore.Listar(de, ate, status);
 
             // ordenação (padrão: data, mais recentes primeiro)
             bool ordemValida = ordenar != null && CamposOrdenacao.Contains(ordenar);
@@ -90,13 +83,14 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
         [HttpGet]
         public IActionResult Create()
         {
-            return View(new PdvViewModel { Catalogo = Catalogo });
+            return View(new PdvViewModel { Catalogo = Catalogo() });
         }
 
         [HttpPost]
         public IActionResult Create(PdvViewModel model)
         {
-            model.Catalogo = Catalogo;
+            var catalogo = Catalogo();
+            model.Catalogo = catalogo;
 
             IActionResult Erro(string mensagem)
             {
@@ -118,7 +112,7 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
             decimal subtotal = 0;
             foreach (var item in model.Itens)
             {
-                var produto = Catalogo.FirstOrDefault(p => p.IdProduto == item.IdProduto);
+                var produto = catalogo.FirstOrDefault(p => p.IdProduto == item.IdProduto);
                 if (produto == null)
                     return Erro("Produto não encontrado.");
                 if (item.Quantidade > produto.Estoque)
@@ -145,32 +139,18 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
                 troco = recebido - total;
             }
 
-            // TODO: gravar Venda + ItemVenda no banco (com o funcionário logado) dentro de uma transação.
-            // Por enquanto, só baixa o estoque da lista em memória.
-            foreach (var item in model.Itens)
-            ProdutoStore.Produtos.First(p => p.IdProduto == item.IdProduto).QuantidadeEstoque -= item.Quantidade;
-
-            var numero = ++_ultimaVenda;
-            VendaStore.Vendas.Add(new VendaListaItem
+            // Grava no banco (procedure sp_RegistrarVenda): venda + itens + baixa de estoque
+            // + entrada no fluxo de caixa, tudo numa única transação.
+            int numero;
+            try
             {
-                IdVenda = numero,
-                Data = DateTime.Now,
-                Funcionario = User.Identity?.Name ?? "Funcionário",
-                QtdItens = model.Itens.Sum(i => i.Quantidade),
-                Desconto = desconto,
-                Valor = total,
-                Status = "Concluída",
-                Itens = model.Itens.Select(i =>
-                {
-                    var p = Catalogo.First(c => c.IdProduto == i.IdProduto);
-                    return new VendaItemDetalhe
-                    {
-                        Produto = p.Nome,
-                        PrecoUnitario = p.Preco,
-                        Quantidade = i.Quantidade
-                    };
-                }).ToList()
-            });
+                numero = VendaStore.Registrar(IdFuncionarioLogado(), model.Itens, desconto);
+            }
+            catch (SqlException ex)
+            {
+                return Erro(Db.Mensagem(ex));
+            }
+
             var msg = $"Venda #{numero} finalizada: {total.ToString("C2", PtBr)}";
             if (troco > 0) msg += $" · Troco: {troco.ToString("C2", PtBr)}";
             TempData["Sucesso"] = msg;
@@ -180,12 +160,30 @@ private static List<PdvProdutoViewModel> Catalogo => ProdutoStore.Produtos
 
         public IActionResult Details(int id)
         {
-            var venda = VendaStore.Vendas.FirstOrDefault(v => v.IdVenda == id);
+            var venda = VendaStore.Buscar(id);
 
             if (venda == null)
                 return NotFound();
 
             return View(venda);
+        }
+
+        // Cancelar: devolve o estoque e remove a entrada que a venda gerou no caixa.
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult Cancelar(int id)
+        {
+            try
+            {
+                VendaStore.Cancelar(id);
+                TempData["Sucesso"] = $"Venda #{id} cancelada. O estoque foi devolvido e a entrada saiu do caixa.";
+            }
+            catch (SqlException ex)
+            {
+                TempData["Erro"] = Db.Mensagem(ex);
+            }
+
+            return RedirectToAction(nameof(Details), new { id });
         }
     }
 }

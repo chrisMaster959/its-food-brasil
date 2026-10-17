@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ItsFoodBrasil.Data;
 using ItsFoodBrasil.Models;
@@ -11,11 +12,10 @@ public class HomeController : Controller
     public IActionResult Index()
     {
         var hoje = DateTime.Today;
+        var inicioMes = new DateTime(hoje.Year, hoje.Month, 1);
 
-        // só vendas concluídas contam como faturamento
-        var concluidas = VendaStore.Vendas
-            .Where(v => v.Status == "Concluída")
-            .ToList();
+        // vendas dos últimos 30 dias (cobre o gráfico e o mês atual); só as concluídas contam como faturamento
+        var concluidas = VendaStore.Listar(de: hoje.AddDays(-30), status: "Concluída");
 
         // 30 dias, incluindo os dias sem venda (total 0)
         var vendasPorDia = Enumerable.Range(0, 30)
@@ -27,11 +27,11 @@ public class HomeController : Controller
             })
             .ToList();
 
-        var saidasMes = MovimentacaoStore.Todas()
-            .Where(m => m.Tipo == "Saída" && m.Data.Year == hoje.Year && m.Data.Month == hoje.Month)
+        var saidasMes = MovimentacaoStore.Listar(inicioMes, hoje)
+            .Where(m => m.Tipo == "Saída")
             .ToList();
 
-        var produtosAtivos = ProdutoStore.Produtos
+        var produtosAtivos = ProdutoStore.Produtos()
             .Where(p => p.Ativo)
             .ToList();
 
@@ -50,7 +50,7 @@ public class HomeController : Controller
 
             VendasUltimos30Dias = vendasPorDia,
 
-            // mesmos limites da tela de Estoque (15 dias / 20 unidades)
+            // mesmos limites da tela de Estoque (15 dias / estoque mínimo do produto)
             ProdutosValidadeProxima = produtosAtivos
                 .Where(p => p.QuantidadeEstoque > 0
                          && p.Validade.HasValue
@@ -66,7 +66,7 @@ public class HomeController : Controller
                 .ToList(),
 
             ProdutosEstoqueBaixo = produtosAtivos
-                .Where(p => p.QuantidadeEstoque < ProdutoListViewModel.LimiteEstoqueBaixo)
+                .Where(p => p.QuantidadeEstoque < p.EstoqueMinimo)
                 .OrderBy(p => p.QuantidadeEstoque)
                 .ThenBy(p => p.Nome)
                 .Take(5)
@@ -77,9 +77,7 @@ public class HomeController : Controller
                 })
                 .ToList(),
 
-            UltimasVendas = VendaStore.Vendas
-                .OrderByDescending(v => v.Data)
-                .Take(5)
+            UltimasVendas = VendaStore.Ultimas(5)
                 .Select(v => new UltimaVendaItem
                 {
                     IdVenda = v.IdVenda,
@@ -99,6 +97,7 @@ public class HomeController : Controller
         return View();
     }
 
+    [AllowAnonymous]
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public IActionResult Error()
     {

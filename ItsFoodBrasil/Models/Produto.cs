@@ -14,6 +14,9 @@ namespace ItsFoodBrasil.Models
 
         public int QuantidadeEstoque { get; set; }
 
+        // Limite do alerta de "estoque baixo" (coluna EstoqueMinimo do banco)
+        public int EstoqueMinimo { get; set; } = 20;
+
         public DateTime? Validade { get; set; }
 
         public bool Ativo { get; set; }

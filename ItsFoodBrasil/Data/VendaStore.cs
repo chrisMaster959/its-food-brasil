@@ -1,85 +1,104 @@
+using System.Data;
+using Microsoft.Data.SqlClient;
 using ItsFoodBrasil.ViewModels;
 
 namespace ItsFoodBrasil.Data
 {
-    // Armazenamento TEMPORÁRIO em memória. Troque por consultas ao banco quando existir.
+    // Vendas, lidas/gravadas no SQL Server (tabelas Venda e ItemVenda).
     public static class VendaStore
     {
-        public static readonly List<VendaListaItem> Vendas = new()
+        // vw_Vendas já traz o nome do funcionário e a quantidade de itens
+        private const string SelectVenda = @"
+            SELECT IdVenda, DataVenda, Funcionario, QtdItens, Desconto, ValorTotal, Status
+            FROM dbo.vw_Vendas";
+
+        private static VendaListaItem Ler(SqlDataReader r) => new()
         {
-            Novo(1048, DateTime.Now.AddMinutes(-25), "Carlos Silva", 0m, "Concluída",
-                I("Presunto fatiado 200g", 12.90m, 20),
-                I("Mortadela defumada 1kg", 24.50m, 10),
-                I("Salsicha hot dog 500g", 9.80m, 30)),
-
-            Novo(1047, DateTime.Now.AddHours(-2), "Ana Souza", 5m, "Concluída",
-                I("Linguiça toscana 1kg", 21.90m, 10),
-                I("Bacon em manta 1kg", 38.90m, 5)),
-
-            Novo(1046, DateTime.Now.AddHours(-4), "Carlos Silva", 0m, "Pendente",
-                I("Salame italiano 300g", 32.00m, 20),
-                I("Queijo mussarela 500g", 27.00m, 30),
-                I("Peito de peru fatiado 200g", 15.90m, 20)),
-
-            Novo(1045, DateTime.Now.AddHours(-26), "Ana Souza", 0m, "Concluída",
-                I("Apresuntado 1kg", 17.50m, 12),
-                I("Linguiça calabresa 500g", 14.90m, 10)),
-
-            Novo(1044, DateTime.Now.AddHours(-30), "Marcos Lima", 0m, "Cancelada",
-                I("Bacon em manta 1kg", 38.90m, 15),
-                I("Mortadela defumada 1kg", 24.50m, 10)),
-
-            Novo(1043, DateTime.Now.AddDays(-2), "Ana Souza", 10m, "Concluída",
-                I("Presunto fatiado 200g", 12.90m, 25),
-                I("Peito de peru fatiado 200g", 15.90m, 15),
-                I("Queijo mussarela 500g", 27.00m, 10)),
-
-            Novo(1042, DateTime.Now.AddDays(-3), "Marcos Lima", 0m, "Concluída",
-                I("Salsicha hot dog 500g", 9.80m, 20),
-                I("Linguiça calabresa 500g", 14.90m, 15)),
-
-            Novo(1041, DateTime.Now.AddDays(-4), "Carlos Silva", 20m, "Concluída",
-                I("Salame italiano 300g", 32.00m, 30),
-                I("Bacon em manta 1kg", 38.90m, 20),
-                I("Queijo mussarela 500g", 27.00m, 25),
-                I("Mortadela defumada 1kg", 24.50m, 15)),
-
-            Novo(1040, DateTime.Now.AddDays(-5), "Ana Souza", 0m, "Concluída",
-                I("Linguiça toscana 1kg", 21.90m, 15),
-                I("Apresuntado 1kg", 17.50m, 10)),
-
-            Novo(1039, DateTime.Now.AddDays(-6), "Marcos Lima", 0m, "Cancelada",
-                I("Presunto fatiado 200g", 12.90m, 30),
-                I("Salsicha hot dog 500g", 9.80m, 25)),
-
-            Novo(1038, DateTime.Now.AddDays(-7), "Carlos Silva", 0m, "Concluída",
-                I("Peito de peru fatiado 200g", 15.90m, 10),
-                I("Linguiça calabresa 500g", 14.90m, 12)),
-
-            Novo(1037, DateTime.Now.AddDays(-8), "Ana Souza", 15m, "Concluída",
-                I("Queijo mussarela 500g", 27.00m, 20),
-                I("Salame italiano 300g", 32.00m, 15),
-                I("Linguiça toscana 1kg", 21.90m, 20)),
+            IdVenda = r.GetInt32(0),
+            Data = r.GetDateTime(1),
+            Funcionario = r.GetString(2),
+            QtdItens = r.GetInt32(3),
+            Desconto = r.GetDecimal(4),
+            Valor = r.GetDecimal(5),
+            Status = r.GetString(6)
         };
 
-        private static VendaItemDetalhe I(string produto, decimal preco, int quantidade) => new()
-        {
-            Produto = produto,
-            PrecoUnitario = preco,
-            Quantidade = quantidade
-        };
+        // Lista de vendas (sem os itens). Datas inclusivas; null = sem filtro.
+        public static List<VendaListaItem> Listar(DateTime? de = null, DateTime? ate = null, string? status = null) =>
+            Db.Consultar(
+                SelectVenda + @"
+                WHERE (@De IS NULL OR DataVenda >= @De)
+                  AND (@Ate IS NULL OR DataVenda < DATEADD(DAY, 1, @Ate))
+                  AND (@Status IS NULL OR Status = @Status)
+                ORDER BY DataVenda DESC, IdVenda DESC",
+                Ler,
+                Db.PData("@De", de?.Date),
+                Db.PData("@Ate", ate?.Date),
+                Db.P("@Status", string.IsNullOrWhiteSpace(status) ? null : status));
 
-        private static VendaListaItem Novo(int id, DateTime data, string funcionario, decimal desconto,
-                                           string status, params VendaItemDetalhe[] itens) => new()
+        public static List<VendaListaItem> Ultimas(int quantidade) =>
+            Db.Consultar(
+                "SELECT TOP (@Qtd) IdVenda, DataVenda, Funcionario, QtdItens, Desconto, ValorTotal, Status " +
+                "FROM dbo.vw_Vendas ORDER BY DataVenda DESC, IdVenda DESC",
+                Ler,
+                Db.P("@Qtd", quantidade));
+
+        // Venda com os itens (tela de detalhes).
+        public static VendaListaItem? Buscar(int id)
         {
-            IdVenda = id,
-            Data = data,
-            Funcionario = funcionario,
-            QtdItens = itens.Sum(i => i.Quantidade),
-            Desconto = desconto,
-            Valor = itens.Sum(i => i.Subtotal) - desconto,
-            Status = status,
-            Itens = itens.ToList()
-        };
+            var venda = Db.Consultar(SelectVenda + " WHERE IdVenda = @Id", Ler, Db.P("@Id", id))
+                          .FirstOrDefault();
+
+            if (venda == null)
+                return null;
+
+            venda.Itens = Db.Consultar(
+                "SELECT Produto, Quantidade, PrecoUnitario FROM dbo.vw_ItensVenda WHERE IdVenda = @Id ORDER BY Produto",
+                r => new VendaItemDetalhe
+                {
+                    Produto = r.GetString(0),
+                    Quantidade = r.GetInt32(1),
+                    PrecoUnitario = r.GetDecimal(2)
+                },
+                Db.P("@Id", id));
+
+            return venda;
+        }
+
+        // Registra a venda inteira numa única transação (feita pela procedure):
+        // valida estoque, grava venda e itens, baixa o estoque e lança a entrada no caixa.
+        // Os preços vêm do banco; só o produto e a quantidade são enviados.
+        public static int Registrar(int idFuncionario, List<PdvItemViewModel> itens, decimal desconto)
+        {
+            var tabela = new DataTable();
+            tabela.Columns.Add("IdProduto", typeof(int));
+            tabela.Columns.Add("Quantidade", typeof(int));
+
+            foreach (var item in itens)
+                tabela.Rows.Add(item.IdProduto, item.Quantidade);
+
+            var pItens = new SqlParameter("@Itens", SqlDbType.Structured)
+            {
+                TypeName = "dbo.TipoItemVenda",
+                Value = tabela
+            };
+
+            var pIdVenda = new SqlParameter("@IdVenda", SqlDbType.Int)
+            {
+                Direction = ParameterDirection.Output
+            };
+
+            Db.Procedimento("dbo.sp_RegistrarVenda",
+                Db.P("@IdFuncionario", idFuncionario),
+                pItens,
+                new SqlParameter("@Desconto", SqlDbType.Decimal) { Precision = 18, Scale = 2, Value = desconto },
+                pIdVenda);
+
+            return (int)pIdVenda.Value;
+        }
+
+        // Devolve o estoque e remove a entrada que a venda gerou no caixa.
+        public static void Cancelar(int idVenda) =>
+            Db.Procedimento("dbo.sp_CancelarVenda", Db.P("@IdVenda", idVenda));
     }
 }

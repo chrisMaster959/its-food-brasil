@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using ItsFoodBrasil.Data;
 using ItsFoodBrasil.Models;
 using ItsFoodBrasil.ViewModels;
@@ -6,9 +7,7 @@ using ItsFoodBrasil.ViewModels;
 public class FuncionarioController : Controller{
     private static FuncionarioCreateViewModel PreencherPerfis(FuncionarioCreateViewModel vm)
     {
-        vm.Perfis = CadastroStore.Perfis
-            .Select(p => new PerfilOpcaoViewModel { Id = p.Key, Nome = p.Value })
-            .ToList();
+        vm.Perfis = CadastroStore.OpcoesPerfil();
         return vm;
     }
 
@@ -33,35 +32,28 @@ public class FuncionarioController : Controller{
             ModelState.AddModelError(nameof(model.IdPerfil), "Perfil inválido.");
 
         var email = (model.Email ?? string.Empty).Trim().ToLowerInvariant();
-        if (!string.IsNullOrEmpty(email) && CadastroStore.EmailExiste(email))
-            ModelState.AddModelError(nameof(model.Email), "Já existe um cadastro com esse e-mail.");
 
         var digitos = new string((model.Telefone ?? string.Empty).Where(char.IsDigit).ToArray());
         if (!string.IsNullOrEmpty(model.Telefone) && digitos.Length is not (10 or 11))
             ModelState.AddModelError(nameof(model.Telefone), "Informe o telefone com DDD.");
 
-        if (!ModelState.IsValid)
-            return View(model);
-
-        var id = CadastroStore.ProximoId();
-
-        // TODO: ao ligar o banco, gravar Pessoa + Funcionario numa transação e
-        // guardar a senha como HASH (ex.: PasswordHasher), nunca em texto puro.
-        CadastroStore.Funcionarios.Add(new Funcionario
+        try
         {
-            IdFuncionario = id,
-            IdPessoa = id,
-            IdPerfil = model.IdPerfil,
-            Status = model.Ativo ? "Ativo" : "Inativo",
-            Pessoa = new Pessoa
-            {
-                IdPessoa = id,
-                Nome = model.Nome.Trim(),
-                Email = email,
-                Telefone = FormatarTelefone(digitos),
-                Senha = model.Senha
-            }
-        });
+            if (!string.IsNullOrEmpty(email) && CadastroStore.EmailExiste(email))
+                ModelState.AddModelError(nameof(model.Email), "Já existe um cadastro com esse e-mail.");
+
+            if (!ModelState.IsValid)
+                return View(model);
+
+            // grava Pessoa + Funcionario no banco (a senha vai como HASH, nunca em texto puro)
+            CadastroStore.Criar(model.Nome.Trim(), email, FormatarTelefone(digitos),
+                                model.Senha, model.IdPerfil, model.Ativo);
+        }
+        catch (SqlException ex)
+        {
+            ModelState.AddModelError(string.Empty, Db.Mensagem(ex));
+            return View(model);
+        }
 
         TempData["Sucesso"] = $"{model.Nome.Trim()} foi cadastrado(a) com sucesso.";
         return RedirectToAction("Index", "Cadastro");
@@ -71,7 +63,7 @@ public class FuncionarioController : Controller{
 [HttpGet]
 public IActionResult Edit(int id)
 {
-    var f = CadastroStore.Funcionarios.FirstOrDefault(x => x.IdFuncionario == id);
+    var f = CadastroStore.Buscar(id);
     if (f == null) return NotFound();
 
     return View(new FuncionarioEditViewModel
@@ -90,7 +82,7 @@ public IActionResult Edit(int id)
     [ValidateAntiForgeryToken]
     public IActionResult Edit(int id, FuncionarioEditViewModel model)
     {
-        var f = CadastroStore.Funcionarios.FirstOrDefault(x => x.IdFuncionario == id);
+        var f = CadastroStore.Buscar(id);
         if (f == null) return NotFound();
 
         model.Id = id;
@@ -118,24 +110,18 @@ public IActionResult Edit(int id)
         if (!ModelState.IsValid)
             return View(model);
 
-        var nomeAntigo = f.Pessoa.Nome;
         var nomeNovo = model.Nome.Trim();
 
-        f.IdPerfil = model.IdPerfil;
-        f.Status = model.Ativo ? "Ativo" : "Inativo";
-        f.Pessoa.Nome = nomeNovo;
-        f.Pessoa.Email = email;
-        f.Pessoa.Telefone = FormatarTelefone(digitos);
-
-        // TODO: ao ligar o banco, a senha vira HASH (ex.: PasswordHasher)
-        if (!string.IsNullOrEmpty(model.NovaSenha))
-            f.Pessoa.Senha = model.NovaSenha;
-
-        // enquanto a venda guarda o nome (e não a FK), acompanha a troca de nome
-        if (!nomeAntigo.Equals(nomeNovo, StringComparison.Ordinal))
+        try
         {
-            foreach (var v in VendaStore.Vendas.Where(v => v.Funcionario == nomeAntigo))
-                v.Funcionario = nomeNovo;
+            // atualiza Pessoa + Funcionario; a nova senha (se informada) é gravada como HASH
+            CadastroStore.Atualizar(f, nomeNovo, email, FormatarTelefone(digitos),
+                                    model.IdPerfil, model.Ativo, model.NovaSenha);
+        }
+        catch (SqlException ex)
+        {
+            ModelState.AddModelError(string.Empty, Db.Mensagem(ex));
+            return View(model);
         }
 
         TempData["Sucesso"] = $"Cadastro de {nomeNovo} atualizado.";
@@ -148,24 +134,26 @@ public IActionResult Edit(int id)
     [ValidateAntiForgeryToken]
     public IActionResult AlternarStatus(int id)
     {
-        var f = CadastroStore.Funcionarios.FirstOrDefault(x => x.IdFuncionario == id);
+        var f = CadastroStore.Buscar(id);
         if (f == null) return NotFound();
 
-        if (f.Status == "Ativo")
+        if (f.Status == "Ativo" && CadastroStore.UltimoAdminAtivo(f))
         {
-            if (CadastroStore.UltimoAdminAtivo(f))
-            {
-                TempData["Erro"] = "Não dá para desativar o único administrador ativo.";
-                return RedirectToAction("Index", "Cadastro");
-            }
-
-            f.Status = "Inativo";
-            TempData["Sucesso"] = $"{f.Pessoa.Nome} foi desativado(a).";
+            TempData["Erro"] = "Não dá para desativar o único administrador ativo.";
+            return RedirectToAction("Index", "Cadastro");
         }
-        else
+
+        try
         {
-            f.Status = "Ativo";
-            TempData["Sucesso"] = $"{f.Pessoa.Nome} foi reativado(a).";
+            var ficouAtivo = CadastroStore.AlternarStatus(id);
+
+            TempData["Sucesso"] = ficouAtivo
+                ? $"{f.Pessoa.Nome} foi reativado(a)."
+                : $"{f.Pessoa.Nome} foi desativado(a).";
+        }
+        catch (SqlException ex)
+        {
+            TempData["Erro"] = Db.Mensagem(ex);
         }
 
         return RedirectToAction("Index", "Cadastro");
@@ -187,7 +175,7 @@ public IActionResult Edit(int id)
     [HttpGet]
     public IActionResult Delete(int id)
     {
-        var f = CadastroStore.Funcionarios.FirstOrDefault(x => x.IdFuncionario == id);
+        var f = CadastroStore.Buscar(id);
         if (f == null) return NotFound();
 
         return View(MontarDelete(f));
@@ -197,7 +185,7 @@ public IActionResult Edit(int id)
     [ValidateAntiForgeryToken]
     public IActionResult DeleteConfirmed(int id)
     {
-        var f = CadastroStore.Funcionarios.FirstOrDefault(x => x.IdFuncionario == id);
+        var f = CadastroStore.Buscar(id);
         if (f == null) return NotFound();
 
         var vm = MontarDelete(f);
@@ -206,7 +194,15 @@ public IActionResult Edit(int id)
         if (!vm.PodeExcluir)
             return View("Delete", vm);
 
-        CadastroStore.Funcionarios.Remove(f);
+        try
+        {
+            CadastroStore.Excluir(id);
+        }
+        catch (SqlException ex)
+        {
+            TempData["Erro"] = Db.Mensagem(ex);
+            return RedirectToAction("Index", "Cadastro");
+        }
 
         TempData["Sucesso"] = $"{vm.Nome} foi excluído(a).";
         return RedirectToAction("Index", "Cadastro");

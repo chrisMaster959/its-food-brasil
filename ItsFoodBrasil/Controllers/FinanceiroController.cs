@@ -1,6 +1,8 @@
 using System.Globalization;
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using ItsFoodBrasil.Data;
 using ItsFoodBrasil.Helpers;
 using ItsFoodBrasil.Models;
@@ -42,12 +44,8 @@ namespace ItsFoodBrasil.Controllers
             if (tipo != "Entrada" && tipo != "Saída") tipo = null;
             if (string.IsNullOrWhiteSpace(categoria)) categoria = null;
 
-            var todas = MovimentacaoStore.Todas();
-
-            // período completo (base dos cards de resumo)
-            var periodo = todas
-                .Where(m => m.Data.Date >= inicio && m.Data.Date <= fim)
-                .ToList();
+            // período completo (base dos cards de resumo), direto do banco
+            var periodo = MovimentacaoStore.Listar(inicio, fim);
 
             // filtros da tabela
             IEnumerable<Movimentacao> filtradas = periodo;
@@ -72,8 +70,8 @@ namespace ItsFoodBrasil.Controllers
             {
                 DataInicial = inicio,
                 DataFinal = fim,
-                SaldoAnterior = MovimentacaoStore.SaldoInicial
-                                + MovimentacaoStore.Liquido(todas.Where(m => m.Data.Date < inicio)),
+                // saldo no fim do dia anterior ao início do período (calculado pelo banco)
+                SaldoAnterior = MovimentacaoStore.SaldoAte(inicio.AddDays(-1)),
                 MovimentacoesPeriodo = periodo,
                 Movimentacoes = ordenadas.ThenBy(m => m.Id).ToList(),
                 Tipo = tipo,
@@ -139,16 +137,27 @@ namespace ItsFoodBrasil.Controllers
 
             var data = model.Data!.Value.Date;
 
-            // TODO: gravar no banco (DbContext) quando existir.
-            MovimentacaoStore.Dados.Add(new Movimentacao
+            // grava no banco (procedure sp_RegistrarMovimentacao), em nome do funcionário logado
+            try
             {
-                Id = MovimentacaoStore.ProximoId(),
-                Data = data,
-                Descricao = model.Descricao.Trim(),
-                Tipo = model.Tipo,
-                Categoria = model.Categoria,
-                Valor = valor
-            });
+                int? idFuncionario = int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var idLogado)
+                    ? idLogado
+                    : null;
+
+                MovimentacaoStore.Registrar(new Movimentacao
+                {
+                    Data = data,
+                    Descricao = model.Descricao.Trim(),
+                    Tipo = model.Tipo,
+                    Categoria = model.Categoria,
+                    Valor = valor
+                }, idFuncionario);
+            }
+            catch (SqlException ex)
+            {
+                ModelState.AddModelError(string.Empty, Db.Mensagem(ex));
+                return View(model);
+            }
 
             TempData["Sucesso"] = $"{model.Tipo} de {valor.ToString("C2", PtBr)} registrada.";
 

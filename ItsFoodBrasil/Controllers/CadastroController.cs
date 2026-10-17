@@ -12,7 +12,7 @@ public class CadastroController : Controller
     public IActionResult Index(string? busca, string? tipo, string? situacao, string? ordenar, string? direcao)
     {
         // funcionários
-        var todos = CadastroStore.Funcionarios
+        var todos = CadastroStore.Listar()
             .Select(f => new CadastroItemViewModel
             {
                 Id = f.IdFuncionario,

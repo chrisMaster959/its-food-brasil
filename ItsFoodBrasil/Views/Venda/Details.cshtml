@@ -30,9 +30,20 @@
             <h2>Venda #@Model.IdVenda</h2>
             <p class="muted">@Model.Data.ToString("dd/MM/yyyy 'às' HH:mm")</p>
         </div>
-        <a asp-action="Index" class="btn-outline">
-            <i class="bi bi-arrow-left"></i> Voltar para vendas
-        </a>
+        <div style="display:flex; gap:8px; align-items:center;">
+            @if (Model.Status == "Concluída")
+            {
+                <form asp-action="Cancelar" asp-route-id="@Model.IdVenda" method="post"
+                      onsubmit="return confirm('Cancelar esta venda? O estoque será devolvido e a entrada sairá do caixa.');">
+                    <button type="submit" class="btn-outline">
+                        <i class="bi bi-x-circle"></i> Cancelar venda
+                    </button>
+                </form>
+            }
+            <a asp-action="Index" class="btn-outline">
+                <i class="bi bi-arrow-left"></i> Voltar para vendas
+            </a>
+        </div>
     </div>
 
     @if (Model.Status != "Concluída")

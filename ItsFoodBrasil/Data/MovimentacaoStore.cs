@@ -1,63 +1,56 @@
+using Microsoft.Data.SqlClient;
 using ItsFoodBrasil.Models;
 
 namespace ItsFoodBrasil.Data
 {
-    // Armazenamento TEMPORÁRIO em memória. Troque por consultas ao banco quando existir.
+    // Fluxo de caixa, lido/gravado no SQL Server (tabela Movimentacao).
+    // As vendas concluídas já entram aqui sozinhas (a procedure sp_RegistrarVenda lança a entrada).
     public static class MovimentacaoStore
     {
-        // Saldo de caixa antes da primeira movimentação.
-        public const decimal SaldoInicial = 12450m;
-
-        // Lançamentos manuais (as vendas entram sozinhas, via Todas()).
-        public static readonly List<Movimentacao> Dados = new()
-        {
-            Mov(1, 28, "Pagamento de aluguel",         "Saída",   "Despesas",            6500m),
-            Mov(2, 24, "Pagamento fornecedor Frimesa", "Saída",   "Fornecedores",       10800m),
-            Mov(3, 20, "Pagamento de energia",         "Saída",   "Despesas",            4230m),
-            Mov(4, 15, "Compra de mercadorias",        "Saída",   "Compras",             9500m),
-            Mov(5, 12, "Suprimento de caixa",          "Entrada", "Suprimento de caixa", 3000m),
-            Mov(6, 9,  "Compra de mercadorias",        "Saída",   "Compras",             8800m),
-            Mov(7, 5,  "Pagamento de frete",           "Saída",   "Frete",               1250m),
-            Mov(8, 2,  "Pagamento fornecedor Frimesa", "Saída",   "Fornecedores",       12450m),
-        };
-
-        private static Movimentacao Mov(int id, int diasAtras, string desc, string tipo, string cat, decimal valor) =>
-            new()
-            {
-                Id = id,
-                Data = DateTime.Today.AddDays(-diasAtras),
-                Descricao = desc,
-                Tipo = tipo,
-                Categoria = cat,
-                Valor = valor
-            };
-
-        public static int ProximoId() =>
-            Dados.Count == 0 ? 1 : Dados.Max(m => m.Id) + 1;
-
-        // Manuais + vendas concluídas (entradas automáticas)
-        public static List<Movimentacao> Todas()
-        {
-            var vendas = VendaStore.Vendas
-                .Where(v => v.Status == "Concluída")
-                .Select(v => new Movimentacao
+        // Movimentações do período (datas inclusivas), com a categoria já resolvida pela view.
+        public static List<Movimentacao> Listar(DateTime inicio, DateTime fim) =>
+            Db.Consultar(
+                @"SELECT IdMovimentacao, DataMovimentacao, Descricao, Tipo, Categoria, Valor
+                  FROM dbo.vw_FluxoCaixa
+                  WHERE DataMovimentacao >= @Inicio
+                    AND DataMovimentacao <  DATEADD(DAY, 1, @Fim)",
+                r => new Movimentacao
                 {
-                    Id = 100000 + v.IdVenda,
-                    Data = v.Data,
-                    Descricao = $"Venda #{v.IdVenda}",
-                    Tipo = "Entrada",
-                    Categoria = "Vendas",
-                    Valor = v.Valor
-                });
+                    Id = r.GetInt32(0),
+                    Data = r.GetDateTime(1),
+                    Descricao = r.GetString(2),
+                    Tipo = r.GetString(3),
+                    Categoria = r.GetString(4),
+                    Valor = r.GetDecimal(5)
+                },
+                Db.PData("@Inicio", inicio.Date),
+                Db.PData("@Fim", fim.Date));
 
-            return Dados.Concat(vendas).ToList();
-        }
+        // saldo de caixa ao final do dia informado (saldo inicial + entradas - saídas)
+        public static decimal SaldoAte(DateTime data) =>
+            Convert.ToDecimal(Db.Escalar("SELECT dbo.fn_SaldoCaixaAte(@Data)", Db.PData("@Data", data.Date, System.Data.SqlDbType.Date)) ?? 0m);
 
         public static decimal Liquido(IEnumerable<Movimentacao> lista) =>
             lista.Sum(m => m.Tipo == "Entrada" ? m.Valor : -m.Valor);
 
-        // saldo de caixa ao final do dia informado
-        public static decimal SaldoAte(DateTime data) =>
-            SaldoInicial + Liquido(Todas().Where(m => m.Data.Date <= data.Date));
+        // Lançamento manual ("Nova movimentação").
+        public static int Registrar(Movimentacao m, int? idFuncionario)
+        {
+            var id = new SqlParameter("@IdMovimentacao", System.Data.SqlDbType.Int)
+            {
+                Direction = System.Data.ParameterDirection.Output
+            };
+
+            Db.Procedimento("dbo.sp_RegistrarMovimentacao",
+                Db.P("@Tipo", m.Tipo),
+                new SqlParameter("@Valor", System.Data.SqlDbType.Decimal) { Precision = 18, Scale = 2, Value = m.Valor },
+                Db.P("@Descricao", m.Descricao),
+                Db.P("@Categoria", m.Categoria),
+                Db.PData("@Data", m.Data),
+                Db.P("@IdFuncionario", idFuncionario),
+                id);
+
+            return (int)id.Value;
+        }
     }
 }
