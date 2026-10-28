@@ -1,5 +1,4 @@
 @using System.Linq
-
 @{
     var ctrl = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
     var act = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
@@ -144,16 +143,18 @@
             </a>
 
             <!-- Cadastros -->
+            @if (User.IsInRole("Admin"))
+            {
+                <a class="@Item(On("Cadastro"))"
+                asp-controller="Cadastro"
+                asp-action="Index">
 
-              <a class="@Item(On("Cadastro"))"
-               asp-controller="Cadastro"
-               asp-action="Index">
+                    <i class="bi bi-person-lines-fill"></i>
 
-                <i class="bi bi-person"></i>   
+                    <span>Cadastros</span>
 
-                <span>Cadastros</span>
-
-            </a>
+                </a>
+            }
 
         </nav>
 

@@ -2,11 +2,14 @@ using Microsoft.AspNetCore.Mvc;
 using ItsFoodBrasil.Data;
 using ItsFoodBrasil.Helpers;
 using ItsFoodBrasil.ViewModels;
+using Microsoft.AspNetCore.Authorization;
 
+[Authorize(Roles = "Admin")]
 public class CadastroController : Controller
 {
     private static readonly string[] CamposOrdenacao =
         { "nome", "tipo", "usuario", "perfil", "status" };
+
 
     [HttpGet]
     public IActionResult Index(string? busca, string? tipo, string? situacao, string? ordenar, string? direcao)

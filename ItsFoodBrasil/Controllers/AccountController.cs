@@ -35,12 +35,14 @@ namespace ItsFoodBrasil.Controllers
             {
                 var email = model.Email.Trim().ToLowerInvariant();
                 var funcionario = CadastroStore.BuscarPorEmail(email);
+                
 
                 // mesma mensagem para e-mail inexistente e senha errada (não revela qual dos dois falhou)
                 if (funcionario == null || !Senha.Conferir(funcionario.Pessoa.Senha, model.Senha))
                 {
                     ModelState.AddModelError(string.Empty, "E-mail ou senha inválidos.");
                     return View(model);
+                   
                 }
 
                 if (funcionario.Status != "Ativo")
