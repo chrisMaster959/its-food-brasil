@@ -1,8 +1,17 @@
 ﻿/* =====================================================================
    ItsFoodBrasil - Distribuição de Embutidos
    Script completo para SQL Server (2016 SP1 ou superior)
-   Gerado a partir do DER: Pessoa, Funcionario, Categoria, Produto,
-   Venda, ItemVenda, Movimentacao.
+
+   Tabelas: Pessoa, Funcionario, Categoria, Produto,
+            Venda, ItemVenda, Movimentacao.
+
+   Pessoa = IdPessoa, Nome, Email, Senha (sem CPF, Telefone e
+   DataNascimento).
+
+   Esta versão já inclui os ajustes da integração com o .NET
+   (Senha VARCHAR(255) para guardar hash, Movimentacao.Categoria,
+   vw_FluxoCaixa com Categoria, sp_RegistrarMovimentacao com
+   @Categoria). Não precisa mais rodar o script de ajustes.
 
    Ordem do script:
      1. Banco de dados
@@ -13,7 +22,7 @@
      6. Procedures
      7. Dados de exemplo (só se o banco estiver vazio)
 
-   O script pode ser executado mais de uma vez (idempotente).
+   O script pode ser reexecutado; objetos e dados de exemplo são protegidos contra duplicação quando possível.
    Salve/abra como UTF-8 para os acentos ('Concluída', 'Saída') ficarem certos.
    ===================================================================== */
 
@@ -34,27 +43,28 @@ GO
 
 -- ---------------------------------------------------------------------
 -- Pessoa
+-- Senha guarda o HASH da senha, por isso VARCHAR(255).
 -- ---------------------------------------------------------------------
 IF OBJECT_ID(N'dbo.Pessoa', N'U') IS NULL
 CREATE TABLE dbo.Pessoa
 (
-    IdPessoa        INT IDENTITY(1,1) NOT NULL,
-    Nome            VARCHAR(150)      NOT NULL,
-    CPF             VARCHAR(14)       NULL,
-    Email           VARCHAR(150)      NULL,
-    Senha           VARCHAR(50)       NULL,
-    Telefone        VARCHAR(20)       NULL,
-    DataNascimento  DATE              NULL,
+    IdPessoa  INT IDENTITY(1,1) NOT NULL,
+    Nome      VARCHAR(150)      NOT NULL,
+    Email     VARCHAR(150)      NULL,
+    Senha     VARCHAR(255)      NULL,
 
     CONSTRAINT PK_Pessoa PRIMARY KEY (IdPessoa),
-    CONSTRAINT CK_Pessoa_Nome CHECK (LEN(LTRIM(RTRIM(Nome))) > 0),
-    CONSTRAINT CK_Pessoa_DataNascimento CHECK (DataNascimento IS NULL OR DataNascimento <= CAST(GETDATE() AS DATE))
+    CONSTRAINT CK_Pessoa_Nome CHECK (LEN(LTRIM(RTRIM(Nome))) > 0)
 );
 GO
 
--- CPF e e-mail são únicos quando informados
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_Pessoa_CPF' AND object_id = OBJECT_ID(N'dbo.Pessoa'))
-    CREATE UNIQUE INDEX UX_Pessoa_CPF   ON dbo.Pessoa (CPF)   WHERE CPF   IS NOT NULL;
+-- Banco já existente: garante o tamanho da senha (hash)
+IF COL_LENGTH(N'dbo.Pessoa', N'Senha') IS NOT NULL
+   AND COL_LENGTH(N'dbo.Pessoa', N'Senha') < 255
+    ALTER TABLE dbo.Pessoa ALTER COLUMN Senha VARCHAR(255) NULL;
+GO
+
+-- E-mail é único quando informado
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_Pessoa_Email' AND object_id = OBJECT_ID(N'dbo.Pessoa'))
     CREATE UNIQUE INDEX UX_Pessoa_Email ON dbo.Pessoa (Email) WHERE Email IS NOT NULL;
 GO
@@ -177,6 +187,7 @@ GO
 -- ---------------------------------------------------------------------
 -- Movimentacao (fluxo de caixa)
 -- IdFuncionario: opcional (quem lançou). IdVenda: opcional (entrada gerada por venda).
+-- Categoria: texto livre do lançamento (vendas ficam sem categoria; a view mostra 'Vendas').
 -- Cada venda gera no máximo uma movimentação (índice único filtrado).
 -- ---------------------------------------------------------------------
 IF OBJECT_ID(N'dbo.Movimentacao', N'U') IS NULL
@@ -186,7 +197,7 @@ CREATE TABLE dbo.Movimentacao
     Tipo              VARCHAR(10)       NOT NULL,
     Valor             DECIMAL(18,2)     NOT NULL,
     Descricao         VARCHAR(200)      NOT NULL,
-    Categoria         VARCHAR(50)           NULL,
+    Categoria         VARCHAR(50)       NULL,
     DataMovimentacao  DATETIME          NOT NULL CONSTRAINT DF_Mov_Data DEFAULT (GETDATE()),
     IdFuncionario     INT               NULL,
     IdVenda           INT               NULL,
@@ -197,6 +208,11 @@ CREATE TABLE dbo.Movimentacao
     CONSTRAINT CK_Mov_Tipo  CHECK (Tipo IN ('Entrada', 'Saída')),
     CONSTRAINT CK_Mov_Valor CHECK (Valor > 0)
 );
+GO
+
+-- Banco já existente: garante a coluna Categoria
+IF COL_LENGTH(N'dbo.Movimentacao', N'Categoria') IS NULL
+    ALTER TABLE dbo.Movimentacao ADD Categoria VARCHAR(50) NULL;
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_Mov_Venda' AND object_id = OBJECT_ID(N'dbo.Movimentacao'))
@@ -219,9 +235,18 @@ CREATE TYPE dbo.TipoItemVenda AS TABLE
 GO
 
 
+
+
+
+
 /* =====================================================================
    4. FUNCTIONS
    ===================================================================== */
+
+-- Pessoa não tem mais CPF: a função de validação deixou de ser usada.
+IF OBJECT_ID(N'dbo.fn_CpfValido', N'FN') IS NOT NULL
+    DROP FUNCTION dbo.fn_CpfValido;
+GO
 
 -- Saldo do caixa antes da primeira movimentação (ajuste conforme a empresa).
 CREATE OR ALTER FUNCTION dbo.fn_SaldoInicialCaixa()
@@ -258,47 +283,6 @@ BEGIN
                     - ISNULL((SELECT Desconto FROM dbo.Venda WHERE IdVenda = @IdVenda), 0);
 
     RETURN @Total;
-END;
-GO
-
--- Valida CPF (aceita com ou sem pontuação).
-CREATE OR ALTER FUNCTION dbo.fn_CpfValido(@Cpf VARCHAR(14))
-RETURNS BIT
-AS
-BEGIN
-    DECLARE @n VARCHAR(11) = REPLACE(REPLACE(REPLACE(ISNULL(@Cpf, ''), '.', ''), '-', ''), ' ', '');
-    DECLARE @i INT, @soma INT, @d1 INT, @d2 INT;
-
-    IF LEN(@n) <> 11 OR @n LIKE '%[^0-9]%'
-        RETURN 0;
-
-    -- sequências como 111.111.111-11 são inválidas
-    IF REPLACE(@n, LEFT(@n, 1), '') = ''
-        RETURN 0;
-
-    SET @i = 1; SET @soma = 0;
-    WHILE @i <= 9
-    BEGIN
-        SET @soma += CAST(SUBSTRING(@n, @i, 1) AS INT) * (11 - @i);
-        SET @i += 1;
-    END
-    SET @d1 = (@soma * 10) % 11;
-    IF @d1 = 10 SET @d1 = 0;
-    IF @d1 <> CAST(SUBSTRING(@n, 10, 1) AS INT)
-        RETURN 0;
-
-    SET @i = 1; SET @soma = 0;
-    WHILE @i <= 10
-    BEGIN
-        SET @soma += CAST(SUBSTRING(@n, @i, 1) AS INT) * (12 - @i);
-        SET @i += 1;
-    END
-    SET @d2 = (@soma * 10) % 11;
-    IF @d2 = 10 SET @d2 = 0;
-    IF @d2 <> CAST(SUBSTRING(@n, 11, 1) AS INT)
-        RETURN 0;
-
-    RETURN 1;
 END;
 GO
 
@@ -351,22 +335,21 @@ GO
    5. VIEWS
    ===================================================================== */
 
--- Funcionários com os dados da pessoa (tela de Cadastros).
+-- 1 -> Funcionários com os dados da pessoa (tela de Cadastros).
 CREATE OR ALTER VIEW dbo.vw_Funcionarios
 AS
 SELECT  f.IdPessoa AS IdFuncionario,
         p.Nome,
-        p.CPF,
         p.Email,
-        p.Telefone,
-        p.DataNascimento,
         f.Perfil,
         f.Ativo
 FROM dbo.Funcionario f
 JOIN dbo.Pessoa      p ON p.IdPessoa = f.IdPessoa;
 GO
-
--- Estoque com os alertas (sem estoque, baixo, vencido, validade próxima).
+-- Teste
+SELECT * FROM vw_Funcionarios
+GO
+-- 2 -> Estoque com os alertas (sem estoque, baixo, vencido, validade próxima).
 CREATE OR ALTER VIEW dbo.vw_Estoque
 AS
 SELECT  p.IdProduto,
@@ -394,8 +377,11 @@ FROM dbo.Produto   p
 JOIN dbo.Categoria c ON c.IdCategoria = p.IdCategoria
 CROSS APPLY (SELECT DATEDIFF(DAY, CAST(GETDATE() AS DATE), p.DataValidade) AS DiasParaVencer) d;
 GO
+--Teste
+SELECT * FROM vw_Estoque
+GO
 
--- Lista de vendas (tela Vendas).
+-- 3 -> Lista de vendas (tela Vendas, infos mais detalhadas).
 CREATE OR ALTER VIEW dbo.vw_Vendas
 AS
 SELECT  v.IdVenda,
@@ -413,7 +399,11 @@ OUTER APPLY (SELECT SUM(Quantidade) AS QtdItens, SUM(Subtotal) AS Subtotal
              FROM dbo.ItemVenda WHERE IdVenda = v.IdVenda) i;
 GO
 
--- Itens vendidos (tela de detalhes da venda).
+--Teste
+SELECT * FROM vw_Vendas
+GO
+
+-- 4 -> Itens vendidos (tela de detalhes da venda).
 CREATE OR ALTER VIEW dbo.vw_ItensVenda
 AS
 SELECT  i.IdVenda,
@@ -428,7 +418,12 @@ JOIN dbo.Produto   p ON p.IdProduto   = i.IdProduto
 JOIN dbo.Categoria c ON c.IdCategoria = p.IdCategoria;
 GO
 
--- Movimentações do fluxo de caixa, com a origem (venda ou lançamento manual).
+--Teste
+SELECT * FROM vw_ItensVenda
+GO
+
+-- 5 -> Movimentações do fluxo de caixa, com a origem (venda ou lançamento manual)
+-- e a categoria (vendas sem categoria aparecem como 'Vendas').
 CREATE OR ALTER VIEW dbo.vw_FluxoCaixa
 AS
 SELECT  m.IdMovimentacao,
@@ -440,12 +435,20 @@ SELECT  m.IdMovimentacao,
         CASE WHEN m.IdVenda IS NOT NULL THEN 'Venda' ELSE 'Manual' END AS Origem,
         m.IdVenda,
         m.IdFuncionario,
-        pe.Nome AS Funcionario
+        pe.Nome AS Funcionario,
+        COALESCE(m.Categoria,
+                 CASE WHEN m.IdVenda IS NOT NULL THEN 'Vendas'
+                      WHEN m.Tipo = 'Entrada'    THEN 'Outras entradas'
+                      ELSE 'Outras saídas' END) AS Categoria
 FROM dbo.Movimentacao m
 LEFT JOIN dbo.Pessoa  pe ON pe.IdPessoa = m.IdFuncionario;
 GO
 
--- Produtos mais vendidos (somente vendas concluídas).
+--Teste
+SELECT * FROM vw_FluxoCaixa
+GO
+
+-- 6 -> Produtos mais vendidos (somente vendas concluídas).
 CREATE OR ALTER VIEW dbo.vw_ProdutosMaisVendidos
 AS
 SELECT  p.IdProduto,
@@ -460,7 +463,11 @@ JOIN dbo.Categoria c ON c.IdCategoria = p.IdCategoria
 GROUP BY p.IdProduto, p.Nome, c.Nome;
 GO
 
--- Vendas concluídas por dia (gráfico dos últimos 30 dias do dashboard).
+--Teste
+SELECT * FROM vw_ProdutosMaisVendidos
+GO
+
+-- 7 -> Vendas concluídas por dia (gráfico dos últimos 30 dias do dashboard).
 CREATE OR ALTER VIEW dbo.vw_VendasPorDia
 AS
 SELECT  CAST(v.DataVenda AS DATE) AS Dia,
@@ -471,7 +478,11 @@ WHERE v.Status = 'Concluída'
 GROUP BY CAST(v.DataVenda AS DATE);
 GO
 
--- Cards do dashboard (uma linha).
+--Teste
+SELECT * FROM vw_VendasPorDia
+GO
+
+-- 8 -> Cards do dashboard (uma linha).
 CREATE OR ALTER VIEW dbo.vw_Dashboard
 AS
 SELECT
@@ -483,23 +494,89 @@ SELECT
     (SELECT COUNT(*) FROM dbo.Funcionario WHERE Ativo = 1) AS FuncionariosAtivos;
 GO
 
+--Teste
+SELECT * FROM vw_Dashboard
+GO
 
+-- 9 -> View de Categorias
+CREATE OR ALTER VIEW dbo.vw_Categorias AS
+SELECT
+    IdCategoria,
+    Nome,
+    Descricao,
+    Ativa
+FROM dbo.Categoria;
+GO
+
+-- Teste
+SELECT * FROM dbo.vw_Categorias;
+GO
+
+-- 10 -> View de Produtos
+CREATE OR ALTER VIEW dbo.vw_Produtos AS
+SELECT
+    IdProduto,
+    IdCategoria,
+    Nome,
+    Descricao,
+    Preco,
+    QuantidadeEstoque,
+    EstoqueMinimo,
+    DataValidade,
+    Ativo
+FROM dbo.Produto;
+GO
+
+-- Teste
+SELECT * FROM dbo.vw_Produtos;
+GO
+
+-- 11 -> View de Vendas individuais
+CREATE OR ALTER VIEW dbo.vw_Vendas_Individuais AS
+SELECT
+    IdVenda,
+    IdFuncionario,
+    DataVenda,
+    ValorTotal,
+    Desconto,
+    Status
+FROM dbo.Venda;
+GO
+
+-- Teste
+SELECT * FROM vw_Vendas_Individuais
+GO
+
+-- 12 -> View de Movimentações
+CREATE OR ALTER VIEW dbo.vw_Movimentacoes AS
+SELECT
+    IdMovimentacao,
+    Tipo,
+    Valor,
+    Descricao,
+    Categoria,
+    DataMovimentacao,
+    IdFuncionario,
+    IdVenda
+FROM dbo.Movimentacao;
+GO
+
+-- Teste
+SELECT * FROM dbo.vw_Movimentacoes;
+GO
 /* =====================================================================
    6. PROCEDURES
    Erros de regra de negócio usam THROW (50000+) com mensagem em português.
    ===================================================================== */
 
 -- ---------------------------------------------------------------------
--- Funcionários
+-- 1 -> Cadastrar funcionários
 -- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_CadastrarFuncionario
-    @Nome            VARCHAR(150),
-    @CPF             VARCHAR(14)  = NULL,
-    @Email           VARCHAR(150) = NULL,
-    @Telefone        VARCHAR(20)  = NULL,
-    @DataNascimento  DATE         = NULL,
-    @Perfil          VARCHAR(20)  = 'Funcionario',
-    @IdPessoa        INT          OUTPUT
+    @Nome       VARCHAR(150),
+    @Email      VARCHAR(150) = NULL,
+    @Perfil     VARCHAR(20)  = 'Funcionario',
+    @IdPessoa   INT          OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -507,7 +584,6 @@ BEGIN
 
     SET @Nome  = LTRIM(RTRIM(ISNULL(@Nome, '')));
     SET @Email = NULLIF(LTRIM(RTRIM(ISNULL(@Email, ''))), '');
-    SET @CPF   = NULLIF(REPLACE(REPLACE(REPLACE(ISNULL(@CPF, ''), '.', ''), '-', ''), ' ', ''), '');
 
     IF @Nome = ''
         THROW 50100, 'Informe o nome do funcionário.', 1;
@@ -515,20 +591,14 @@ BEGIN
     IF @Perfil NOT IN ('Admin', 'Funcionario')
         THROW 50101, 'Perfil inválido. Use Admin ou Funcionario.', 1;
 
-    IF @CPF IS NOT NULL AND dbo.fn_CpfValido(@CPF) = 0
-        THROW 50102, 'CPF inválido.', 1;
-
-    IF @CPF IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Pessoa WHERE CPF = @CPF)
-        THROW 50103, 'Já existe uma pessoa cadastrada com esse CPF.', 1;
-
     IF @Email IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Pessoa WHERE Email = @Email)
         THROW 50104, 'Já existe uma pessoa cadastrada com esse e-mail.', 1;
 
     BEGIN TRY
         BEGIN TRAN;
 
-        INSERT dbo.Pessoa (Nome, CPF, Email, Telefone, DataNascimento)
-        VALUES (@Nome, @CPF, @Email, @Telefone, @DataNascimento);
+        INSERT dbo.Pessoa (Nome, Email)
+        VALUES (@Nome, @Email);
 
         SET @IdPessoa = SCOPE_IDENTITY();
 
@@ -544,14 +614,37 @@ BEGIN
 END;
 GO
 
+-- TESTE 1: Cadastrar funcionário
+BEGIN TRANSACTION;
+
+DECLARE @IdPessoa INT;
+DECLARE @EmailTeste VARCHAR(150) = CONCAT('teste_', CONVERT(VARCHAR(36), NEWID()), '@exemplo.com');
+
+EXEC dbo.sp_CadastrarFuncionario
+    @Nome = 'Funcionario Teste',
+    @Email = @EmailTeste,
+    @Perfil = 'Funcionario',
+    @IdPessoa = @IdPessoa OUTPUT;
+
+SELECT *
+FROM dbo.Pessoa
+WHERE IdPessoa = @IdPessoa;
+
+SELECT *
+FROM dbo.Funcionario
+WHERE IdPessoa = @IdPessoa;
+
+ROLLBACK TRANSACTION;
+GO
+
+-- ---------------------------------------------------------------------
+-- 2 -> Atualizar funcionários
+-- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_AtualizarFuncionario
-    @IdPessoa        INT,
-    @Nome            VARCHAR(150),
-    @CPF             VARCHAR(14)  = NULL,
-    @Email           VARCHAR(150) = NULL,
-    @Telefone        VARCHAR(20)  = NULL,
-    @DataNascimento  DATE         = NULL,
-    @Perfil          VARCHAR(20)
+    @IdPessoa  INT,
+    @Nome      VARCHAR(150),
+    @Email     VARCHAR(150) = NULL,
+    @Perfil    VARCHAR(20)
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -559,7 +652,6 @@ BEGIN
 
     SET @Nome  = LTRIM(RTRIM(ISNULL(@Nome, '')));
     SET @Email = NULLIF(LTRIM(RTRIM(ISNULL(@Email, ''))), '');
-    SET @CPF   = NULLIF(REPLACE(REPLACE(REPLACE(ISNULL(@CPF, ''), '.', ''), '-', ''), ' ', ''), '');
 
     IF NOT EXISTS (SELECT 1 FROM dbo.Funcionario WHERE IdPessoa = @IdPessoa)
         THROW 50110, 'Funcionário não encontrado.', 1;
@@ -569,12 +661,6 @@ BEGIN
 
     IF @Perfil NOT IN ('Admin', 'Funcionario')
         THROW 50101, 'Perfil inválido. Use Admin ou Funcionario.', 1;
-
-    IF @CPF IS NOT NULL AND dbo.fn_CpfValido(@CPF) = 0
-        THROW 50102, 'CPF inválido.', 1;
-
-    IF @CPF IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Pessoa WHERE CPF = @CPF AND IdPessoa <> @IdPessoa)
-        THROW 50103, 'Já existe uma pessoa cadastrada com esse CPF.', 1;
 
     IF @Email IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Pessoa WHERE Email = @Email AND IdPessoa <> @IdPessoa)
         THROW 50104, 'Já existe uma pessoa cadastrada com esse e-mail.', 1;
@@ -589,8 +675,7 @@ BEGIN
         BEGIN TRAN;
 
         UPDATE dbo.Pessoa
-           SET Nome = @Nome, CPF = @CPF, Email = @Email,
-               Telefone = @Telefone, DataNascimento = @DataNascimento
+           SET Nome = @Nome, Email = @Email
          WHERE IdPessoa = @IdPessoa;
 
         UPDATE dbo.Funcionario SET Perfil = @Perfil WHERE IdPessoa = @IdPessoa;
@@ -604,7 +689,48 @@ BEGIN
 END;
 GO
 
--- Botão do "olho": deixa de exibir / reativa.
+-- TESTE 2: Atualizar funcionário
+DECLARE @IdPessoa INT;
+DECLARE @Nome VARCHAR(150);
+DECLARE @Email VARCHAR(150);
+DECLARE @Perfil VARCHAR(20);
+
+SELECT TOP 1
+    @IdPessoa = IdPessoa,
+    @Nome = Nome,
+    @Email = Email,
+    @Perfil = Perfil
+FROM dbo.vw_Funcionarios
+WHERE Perfil = 'Funcionario'
+  AND Ativo = 1;
+
+IF @IdPessoa IS NULL
+BEGIN
+    PRINT 'Teste ignorado: não existe funcionário ativo para testar.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    SET @Nome = CONCAT(@Nome, ' Teste');
+
+    EXEC dbo.sp_AtualizarFuncionario
+        @IdPessoa = @IdPessoa,
+        @Nome = @Nome,
+        @Email = @Email,
+        @Perfil = @Perfil;
+
+    SELECT *
+    FROM dbo.vw_Funcionarios
+    WHERE IdPessoa = @IdPessoa;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+-- ---------------------------------------------------------------------
+-- 3 -> Botão do "olho": deixa de exibir / reativa funcionario
+-- ---------------------------------------------------------------------
+-- 
 CREATE OR ALTER PROCEDURE dbo.sp_AlternarStatusFuncionario
     @IdFuncionario INT
 AS
@@ -626,7 +752,36 @@ BEGIN
 END;
 GO
 
--- Excluir: só se o funcionário nunca registrou venda nem movimentação.
+-- TESTE 3: Alternar status do funcionário
+DECLARE @IdFuncionario INT;
+
+SELECT TOP 1 @IdFuncionario = IdPessoa
+FROM dbo.Funcionario
+WHERE Perfil = 'Funcionario';
+
+IF @IdFuncionario IS NULL
+BEGIN
+    PRINT 'Teste ignorado: não existe funcionário para testar.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    EXEC dbo.sp_AlternarStatusFuncionario
+        @IdFuncionario = @IdFuncionario;
+
+    SELECT IdPessoa, Perfil, Ativo
+    FROM dbo.Funcionario
+    WHERE IdPessoa = @IdFuncionario;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- 4 -> -- Excluir: só se o funcionário nunca registrou venda nem movimentação.
+-- ---------------------------------------------------------------------
+
 CREATE OR ALTER PROCEDURE dbo.sp_ExcluirFuncionario
     @IdFuncionario INT
 AS
@@ -657,9 +812,34 @@ BEGIN
     END CATCH
 END;
 GO
+-- TESTE 4: Excluir funcionário de teste
+BEGIN TRANSACTION;
 
--- Lista de cadastros (busca + situação + ordenação).
+DECLARE @IdPessoa INT;
+DECLARE @EmailTeste VARCHAR(150) = CONCAT('excluir_', CONVERT(VARCHAR(36), NEWID()), '@exemplo.com');
+
+EXEC dbo.sp_CadastrarFuncionario
+    @Nome = 'Funcionario Para Excluir',
+    @Email = @EmailTeste,
+    @Perfil = 'Funcionario',
+    @IdPessoa = @IdPessoa OUTPUT;
+
+EXEC dbo.sp_ExcluirFuncionario
+    @IdFuncionario = @IdPessoa;
+
+SELECT *
+FROM dbo.Funcionario
+WHERE IdPessoa = @IdPessoa;
+
+ROLLBACK TRANSACTION;
+GO
+
+
+-- ---------------------------------------------------------------------
+-- 5 -> Lista de cadastros (busca + situação + ordenação).
 -- @Ordenar: nome | perfil | status ; @Direcao: asc | desc
+-- ---------------------------------------------------------------------
+
 CREATE OR ALTER PROCEDURE dbo.sp_ListarFuncionarios
     @Busca     VARCHAR(150) = NULL,
     @Situacao  VARCHAR(10)  = NULL,       -- 'ativo' | 'inativo'
@@ -674,8 +854,7 @@ BEGIN
 
     SELECT *
     FROM dbo.vw_Funcionarios
-    WHERE (@Busca IS NULL OR Nome LIKE '%' + @Busca + '%'
-                          OR CPF  LIKE '%' + @Busca + '%'
+    WHERE (@Busca IS NULL OR Nome  LIKE '%' + @Busca + '%'
                           OR Email LIKE '%' + @Busca + '%')
       AND (@Situacao IS NULL
            OR (@Situacao = 'ativo'   AND Ativo = 1)
@@ -690,8 +869,20 @@ BEGIN
 END;
 GO
 
+-- TESTE 5: Listar funcionários
+EXEC dbo.sp_ListarFuncionarios;
+GO
+
+-- Teste com filtros e ordenação
+EXEC dbo.sp_ListarFuncionarios
+    @Busca = NULL,
+    @Situacao = 'ativo',
+    @Ordenar = 'nome',
+    @Direcao = 'asc';
+GO
+
 -- ---------------------------------------------------------------------
--- Categorias e produtos
+-- 6 -> Cadastrar categorias
 -- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_CadastrarCategoria
     @Nome         VARCHAR(80),
@@ -713,6 +904,28 @@ BEGIN
     SET @IdCategoria = SCOPE_IDENTITY();
 END;
 GO
+
+-- TESTE 6: Cadastrar categoria
+BEGIN TRANSACTION;
+
+DECLARE @IdCategoria INT;
+DECLARE @NomeCategoriaTeste VARCHAR(80) = CONCAT('Categoria Teste ', LEFT(CONVERT(VARCHAR(36), NEWID()), 8));
+
+EXEC dbo.sp_CadastrarCategoria
+    @Nome = @NomeCategoriaTeste,
+    @Descricao = 'Categoria criada para teste',
+    @IdCategoria = @IdCategoria OUTPUT;
+
+SELECT *
+FROM dbo.Categoria
+WHERE IdCategoria = @IdCategoria;
+
+ROLLBACK TRANSACTION;
+GO
+
+-- ---------------------------------------------------------------------
+-- 7 -> -- Cadastrar produto
+-- ---------------------------------------------------------------------
 
 CREATE OR ALTER PROCEDURE dbo.sp_CadastrarProduto
     @IdCategoria        INT,
@@ -747,6 +960,44 @@ BEGIN
 END;
 GO
 
+-- TESTE 7: Cadastrar produto
+DECLARE @IdCategoria INT;
+
+SELECT TOP 1 @IdCategoria = IdCategoria
+FROM dbo.Categoria
+WHERE Ativa = 1;
+
+IF @IdCategoria IS NULL
+BEGIN
+    PRINT 'Teste ignorado: não existe categoria ativa.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    DECLARE @IdProduto INT;
+
+    EXEC dbo.sp_CadastrarProduto
+        @IdCategoria = @IdCategoria,
+        @Nome = 'Produto Teste',
+        @Descricao = 'Produto criado para teste',
+        @Preco = 10.00,
+        @QuantidadeEstoque = 5,
+        @EstoqueMinimo = 2,
+        @DataValidade = NULL,
+        @IdProduto = @IdProduto OUTPUT;
+
+    SELECT *
+    FROM dbo.Produto
+    WHERE IdProduto = @IdProduto;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- 8 -> -- Atualizar produto
+-- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_AtualizarProduto
     @IdProduto          INT,
     @IdCategoria        INT,
@@ -784,7 +1035,58 @@ BEGIN
 END;
 GO
 
--- Botão do "olho" do estoque: desativado deixa de aparecer no caixa.
+-- TESTE 8: Atualizar produto
+DECLARE @IdProduto INT;
+DECLARE @IdCategoria INT;
+DECLARE @Nome VARCHAR(150);
+DECLARE @Descricao VARCHAR(500);
+DECLARE @Preco DECIMAL(18,2);
+DECLARE @QuantidadeEstoque INT;
+DECLARE @EstoqueMinimo INT;
+DECLARE @DataValidade DATE;
+DECLARE @Ativo BIT;
+
+SELECT TOP 1
+    @IdProduto = IdProduto,
+    @IdCategoria = IdCategoria,
+    @Nome = Nome,
+    @Descricao = Descricao,
+    @Preco = Preco,
+    @QuantidadeEstoque = QuantidadeEstoque,
+    @EstoqueMinimo = EstoqueMinimo,
+    @DataValidade = DataValidade,
+    @Ativo = Ativo
+FROM dbo.Produto;
+
+IF @IdProduto IS NULL
+BEGIN
+    PRINT 'Teste ignorado: não existe produto para atualizar.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    EXEC dbo.sp_AtualizarProduto
+        @IdProduto = @IdProduto,
+        @IdCategoria = @IdCategoria,
+        @Nome = @Nome,
+        @Descricao = @Descricao,
+        @Preco = @Preco,
+        @QuantidadeEstoque = @QuantidadeEstoque,
+        @EstoqueMinimo = @EstoqueMinimo,
+        @DataValidade = @DataValidade,
+        @Ativo = @Ativo;
+
+    SELECT *
+    FROM dbo.Produto
+    WHERE IdProduto = @IdProduto;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+-- ---------------------------------------------------------------------
+-- 9 -> Botão do "olho" do estoque: desativado deixa de aparecer no caixa.
+-- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_AlternarAtivoProduto
     @IdProduto INT
 AS
@@ -802,7 +1104,34 @@ BEGIN
 END;
 GO
 
--- Produto já vendido não pode ser excluído (só desativado).
+-- TESTE 9: Alternar status do produto
+DECLARE @IdProduto INT;
+
+SELECT TOP 1 @IdProduto = IdProduto
+FROM dbo.Produto;
+
+IF @IdProduto IS NULL
+BEGIN
+    PRINT 'Teste ignorado: não existe produto para testar.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    EXEC dbo.sp_AlternarAtivoProduto
+        @IdProduto = @IdProduto;
+
+    SELECT IdProduto, Nome, Ativo
+    FROM dbo.Produto
+    WHERE IdProduto = @IdProduto;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- 10 -> Produto já vendido não pode ser excluído (só desativado).
+-- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_ExcluirProduto
     @IdProduto INT
 AS
@@ -819,9 +1148,49 @@ BEGIN
 END;
 GO
 
--- Estoque: busca, categoria, situação e ordenação.
+-- TESTE 10: Excluir produto de teste
+DECLARE @IdCategoria INT;
+
+SELECT TOP 1 @IdCategoria = IdCategoria
+FROM dbo.Categoria;
+
+IF @IdCategoria IS NULL
+BEGIN
+    PRINT 'Teste ignorado: não existe categoria para cadastrar o produto.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    DECLARE @IdProduto INT;
+
+    EXEC dbo.sp_CadastrarProduto
+        @IdCategoria = @IdCategoria,
+        @Nome = 'Produto Para Excluir',
+        @Descricao = 'Produto criado para teste de exclusão',
+        @Preco = 5.00,
+        @QuantidadeEstoque = 1,
+        @EstoqueMinimo = 0,
+        @DataValidade = NULL,
+        @IdProduto = @IdProduto OUTPUT;
+
+    EXEC dbo.sp_ExcluirProduto
+        @IdProduto = @IdProduto;
+
+    SELECT *
+    FROM dbo.Produto
+    WHERE IdProduto = @IdProduto;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- 11 -> -- Estoque: busca, categoria, situação e ordenação.
 -- @Situacao: baixo | sem | proxima | vencido | inativo
 -- @Ordenar : produto | categoria | preco | estoque | validade | status
+-- ---------------------------------------------------------------------
+
 CREATE OR ALTER PROCEDURE dbo.sp_ListarEstoque
     @Busca        VARCHAR(150) = NULL,
     @IdCategoria  INT          = NULL,
@@ -864,7 +1233,22 @@ BEGIN
 END;
 GO
 
--- Indicadores do topo da tela de estoque (sobre os produtos ativos).
+-- TESTE 11: Listar estoque
+EXEC dbo.sp_ListarEstoque;
+GO
+
+-- Teste filtrando produtos com estoque baixo
+EXEC dbo.sp_ListarEstoque
+    @Busca = NULL,
+    @IdCategoria = NULL,
+    @Situacao = 'baixo',
+    @Ordenar = 'estoque',
+    @Direcao = 'asc';
+GO
+
+-- ---------------------------------------------------------------------
+-- 12 -> Indicadores do topo da tela de estoque (sobre os produtos ativos).
+-- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_ResumoEstoque
 AS
 BEGIN
@@ -879,11 +1263,18 @@ BEGIN
 END;
 GO
 
+-- TESTE 12: Consultar resumo do estoque
+EXEC dbo.sp_ResumoEstoque;
+GO
+
 -- ---------------------------------------------------------------------
+-- 13 -> -- ---------------------------------------------------------------------
 -- Vendas (Caixa / PDV)
 -- Preços vêm SEMPRE do banco. Tudo em uma transação:
 -- valida, grava venda e itens, baixa o estoque e gera a entrada no caixa.
 -- ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------
+
 CREATE OR ALTER PROCEDURE dbo.sp_RegistrarVenda
     @IdFuncionario  INT,
     @Itens          dbo.TipoItemVenda READONLY,
@@ -971,7 +1362,59 @@ BEGIN
 END;
 GO
 
--- Cancelar: devolve o estoque e remove a entrada que a venda gerou no caixa.
+-- TESTE 13: Registrar venda
+DECLARE @IdFuncionario INT;
+DECLARE @IdProduto INT;
+DECLARE @IdVenda INT;
+DECLARE @Itens dbo.TipoItemVenda;
+
+SELECT TOP 1 @IdFuncionario = IdPessoa
+FROM dbo.Funcionario
+WHERE Ativo = 1;
+
+SELECT TOP 1 @IdProduto = IdProduto
+FROM dbo.Produto
+WHERE Ativo = 1
+  AND QuantidadeEstoque > 0;
+
+IF @IdFuncionario IS NULL OR @IdProduto IS NULL
+BEGIN
+    PRINT 'Teste ignorado: é necessário ter funcionário ativo e produto com estoque.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    INSERT INTO @Itens (IdProduto, Quantidade)
+    VALUES (@IdProduto, 1);
+
+    EXEC dbo.sp_RegistrarVenda
+        @IdFuncionario = @IdFuncionario,
+        @Itens = @Itens,
+        @Desconto = 0,
+        @IdVenda = @IdVenda OUTPUT;
+
+    SELECT *
+    FROM dbo.Venda
+    WHERE IdVenda = @IdVenda;
+
+    SELECT *
+    FROM dbo.ItemVenda
+    WHERE IdVenda = @IdVenda;
+
+    SELECT *
+    FROM dbo.Movimentacao
+    WHERE IdVenda = @IdVenda;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- 14 -> -- Cancelar: devolve o estoque e remove a entrada que a venda gerou no caixa.
+-- ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------
+
 CREATE OR ALTER PROCEDURE dbo.sp_CancelarVenda
     @IdVenda INT
 AS
@@ -1007,9 +1450,61 @@ BEGIN
 END;
 GO
 
--- Tela Vendas: filtros (datas inclusivas, status) + ordenação.
+-- TESTE 14: Cancelar venda
+DECLARE @IdFuncionario INT;
+DECLARE @IdProduto INT;
+DECLARE @IdVenda INT;
+DECLARE @Itens dbo.TipoItemVenda;
+
+SELECT TOP 1 @IdFuncionario = IdPessoa
+FROM dbo.Funcionario
+WHERE Ativo = 1;
+
+SELECT TOP 1 @IdProduto = IdProduto
+FROM dbo.Produto
+WHERE Ativo = 1
+  AND QuantidadeEstoque > 0;
+
+IF @IdFuncionario IS NULL OR @IdProduto IS NULL
+BEGIN
+    PRINT 'Teste ignorado: é necessário ter funcionário ativo e produto com estoque.';
+END
+ELSE
+BEGIN
+    BEGIN TRANSACTION;
+
+    INSERT INTO @Itens (IdProduto, Quantidade)
+    VALUES (@IdProduto, 1);
+
+    EXEC dbo.sp_RegistrarVenda
+        @IdFuncionario = @IdFuncionario,
+        @Itens = @Itens,
+        @Desconto = 0,
+        @IdVenda = @IdVenda OUTPUT;
+
+    EXEC dbo.sp_CancelarVenda
+        @IdVenda = @IdVenda;
+
+    SELECT IdVenda, Status, ValorTotal
+    FROM dbo.Venda
+    WHERE IdVenda = @IdVenda;
+
+    SELECT *
+    FROM dbo.Movimentacao
+    WHERE IdVenda = @IdVenda;
+
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+-- ---------------------------------------------------------------------
+-- 15 -> -- Tela Vendas: filtros (datas inclusivas, status) + ordenação.
 -- @Ordenar: venda | data | funcionario | itens | desconto | valor | status
 -- Padrão: data decrescente. Devolve também o total das vendas concluídas listadas.
+-- ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------
+
+
 CREATE OR ALTER PROCEDURE dbo.sp_ListarVendas
     @DataInicial       DATE          = NULL,
     @DataFinal         DATE          = NULL,
@@ -1063,7 +1558,24 @@ BEGIN
 END;
 GO
 
--- Detalhes da venda: cabeçalho + itens.
+-- TESTE 15: Listar vendas
+DECLARE @TotalConcluidas DECIMAL(18,2);
+
+EXEC dbo.sp_ListarVendas
+    @DataInicial = NULL,
+    @DataFinal = NULL,
+    @Status = NULL,
+    @Ordenar = 'data',
+    @Direcao = 'desc',
+    @TotalConcluidas = @TotalConcluidas OUTPUT;
+
+SELECT @TotalConcluidas AS TotalVendasConcluidas;
+GO
+
+-- ---------------------------------------------------------------------
+-- 16 -> -- -- Detalhes da venda: cabeçalho + itens.
+-- ---------------------------------------------------------------------
+
 CREATE OR ALTER PROCEDURE dbo.sp_DetalhesVenda
     @IdVenda INT
 AS
@@ -1078,338 +1590,26 @@ BEGIN
 END;
 GO
 
--- ---------------------------------------------------------------------
--- Fluxo de caixa
--- ---------------------------------------------------------------------
+-- TESTE 16: Consultar detalhes de uma venda
+DECLARE @IdVenda INT;
 
--- Lançamento manual ("Nova movimentação").
-CREATE OR ALTER PROCEDURE dbo.sp_RegistrarMovimentacao
-    @Tipo            VARCHAR(10),
-    @Valor           DECIMAL(18,2),
-    @Descricao       VARCHAR(200),
-    @Data            DATETIME = NULL,
-    @IdFuncionario   INT      = NULL,
-    @IdMovimentacao  INT      OUTPUT
-AS
+SELECT TOP 1 @IdVenda = IdVenda
+FROM dbo.Venda
+ORDER BY IdVenda DESC;
+
+IF @IdVenda IS NULL
 BEGIN
-    SET NOCOUNT ON;
-
-    SET @Descricao = LTRIM(RTRIM(ISNULL(@Descricao, '')));
-    SET @Data = ISNULL(@Data, GETDATE());
-
-    IF @Tipo NOT IN ('Entrada', 'Saída')
-        THROW 50400, 'Tipo inválido. Use Entrada ou Saída.', 1;
-    IF @Descricao = ''
-        THROW 50401, 'Informe a descrição.', 1;
-    IF @Valor IS NULL OR @Valor <= 0
-        THROW 50402, 'Informe um valor maior que zero.', 1;
-    IF @IdFuncionario IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Funcionario WHERE IdPessoa = @IdFuncionario)
-        THROW 50403, 'Funcionário não encontrado.', 1;
-
-    INSERT dbo.Movimentacao (Tipo, Valor, Descricao, DataMovimentacao, IdFuncionario, IdVenda)
-    VALUES (@Tipo, @Valor, @Descricao, @Data, @IdFuncionario, NULL);
-
-    SET @IdMovimentacao = SCOPE_IDENTITY();
-END;
-GO
-
--- Cards do fluxo de caixa. Sem datas: últimos 30 dias.
-CREATE OR ALTER PROCEDURE dbo.sp_ResumoFluxoCaixa
-    @DataInicial DATE = NULL,
-    @DataFinal   DATE = NULL
-AS
+    PRINT 'Teste ignorado: não existe venda cadastrada.';
+END
+ELSE
 BEGIN
-    SET NOCOUNT ON;
-
-    SET @DataFinal   = ISNULL(@DataFinal, CAST(GETDATE() AS DATE));
-    SET @DataInicial = ISNULL(@DataInicial, DATEADD(DAY, -30, CAST(GETDATE() AS DATE)));
-
-    IF @DataInicial > @DataFinal
-        THROW 50410, 'A data inicial não pode ser maior que a data final.', 1;
-
-    DECLARE @Anterior DECIMAL(18,2) = dbo.fn_SaldoCaixaAte(DATEADD(DAY, -1, @DataInicial));
-    DECLARE @Entradas DECIMAL(18,2), @Saidas DECIMAL(18,2);
-
-    SELECT @Entradas = ISNULL(SUM(CASE WHEN Tipo = 'Entrada' THEN Valor END), 0),
-           @Saidas   = ISNULL(SUM(CASE WHEN Tipo = 'Saída'   THEN Valor END), 0)
-    FROM dbo.fn_MovimentacoesPorPeriodo(@DataInicial, @DataFinal);
-
-    SELECT  @DataInicial                       AS DataInicial,
-            @DataFinal                         AS DataFinal,
-            @Anterior                          AS SaldoAnterior,
-            @Entradas                          AS TotalEntradas,
-            @Saidas                            AS TotalSaidas,
-            @Anterior + @Entradas - @Saidas    AS SaldoAtual;
-END;
-GO
-
--- Tabela do fluxo de caixa: período, tipo e ordenação.
--- @Ordenar: data | descricao | tipo | valor ; padrão: data crescente.
-CREATE OR ALTER PROCEDURE dbo.sp_FluxoCaixa
-    @DataInicial DATE        = NULL,
-    @DataFinal   DATE        = NULL,
-    @Tipo        VARCHAR(10) = NULL,
-    @Ordenar     VARCHAR(20) = 'data',
-    @Direcao     VARCHAR(4)  = 'asc'
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    SET @DataFinal   = ISNULL(@DataFinal, CAST(GETDATE() AS DATE));
-    SET @DataInicial = ISNULL(@DataInicial, DATEADD(DAY, -30, CAST(GETDATE() AS DATE)));
-
-    IF @DataInicial > @DataFinal
-        THROW 50410, 'A data inicial não pode ser maior que a data final.', 1;
-
-    IF @Direcao NOT IN ('asc', 'desc') SET @Direcao = 'asc';
-    SET @Tipo = NULLIF(LTRIM(RTRIM(ISNULL(@Tipo, ''))), '');
-
-    SELECT  f.IdMovimentacao, f.DataMovimentacao, f.Descricao, f.Tipo, f.Valor,
-            f.ValorComSinal, f.Origem, f.IdVenda, f.Funcionario
-    FROM dbo.vw_FluxoCaixa f
-    WHERE f.DataMovimentacao >= CAST(@DataInicial AS DATETIME)
-      AND f.DataMovimentacao <  DATEADD(DAY, 1, CAST(@DataFinal AS DATETIME))
-      AND (@Tipo IS NULL OR f.Tipo = @Tipo)
-    ORDER BY
-        CASE WHEN @Ordenar = 'descricao' AND @Direcao = 'asc'  THEN f.Descricao END ASC,
-        CASE WHEN @Ordenar = 'descricao' AND @Direcao = 'desc' THEN f.Descricao END DESC,
-        CASE WHEN @Ordenar = 'tipo'      AND @Direcao = 'asc'  THEN f.Tipo END ASC,
-        CASE WHEN @Ordenar = 'tipo'      AND @Direcao = 'desc' THEN f.Tipo END DESC,
-        CASE WHEN @Ordenar = 'valor'     AND @Direcao = 'asc'  THEN f.Valor END ASC,
-        CASE WHEN @Ordenar = 'valor'     AND @Direcao = 'desc' THEN f.Valor END DESC,
-        CASE WHEN @Ordenar NOT IN ('descricao', 'tipo', 'valor') AND @Direcao = 'asc'  THEN f.DataMovimentacao END ASC,
-        CASE WHEN @Ordenar NOT IN ('descricao', 'tipo', 'valor') AND @Direcao = 'desc' THEN f.DataMovimentacao END DESC,
-        f.IdMovimentacao ASC;
+    EXEC dbo.sp_DetalhesVenda
+        @IdVenda = @IdVenda;
 END;
 GO
 
 -- ---------------------------------------------------------------------
--- Dashboard
--- ---------------------------------------------------------------------
-CREATE OR ALTER PROCEDURE dbo.sp_Dashboard
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    SELECT * FROM dbo.vw_Dashboard;
-
-    -- últimos 30 dias
-    SELECT Dia, QtdVendas, Faturamento
-    FROM dbo.vw_VendasPorDia
-    WHERE Dia >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))
-    ORDER BY Dia;
-
-    -- alertas de estoque
-    SELECT IdProduto, Nome, Categoria, Estoque, EstoqueMinimo, DataValidade, DiasParaVencer,
-           SemEstoque, EstoqueBaixo, Vencido, ValidadeProxima
-    FROM dbo.vw_Estoque
-    WHERE EmAlerta = 1
-    ORDER BY Nome;
-
-    -- últimas vendas
-    SELECT TOP (5) IdVenda, DataVenda, Funcionario, QtdItens, ValorTotal, Status
-    FROM dbo.vw_Vendas
-    ORDER BY DataVenda DESC;
-END;
-GO
-
-
-/* =====================================================================
-   7. DADOS DE EXEMPLO (só entram se as tabelas estiverem vazias)
-   ===================================================================== */
-
-IF NOT EXISTS (SELECT 1 FROM dbo.Categoria)
-BEGIN
-    INSERT dbo.Categoria (Nome, Descricao) VALUES
-        ('Embutidos', 'Salsichas, linguiças, mortadelas e apresuntados'),
-        ('Frios',     'Presuntos, salames e peito de peru'),
-        ('Defumados', 'Bacon e produtos defumados'),
-        ('Laticínios','Queijos');
-END
-GO
-
-IF NOT EXISTS (SELECT 1 FROM dbo.Produto)
-BEGIN
-    INSERT dbo.Produto (IdCategoria, Nome, Preco, QuantidadeEstoque, EstoqueMinimo, DataValidade)
-    SELECT c.IdCategoria, v.Nome, v.Preco, v.Qtd, 20, DATEADD(DAY, v.Dias, CAST(GETDATE() AS DATE))
-    FROM (VALUES
-        ('Embutidos',  'Salsicha hot dog 500g',       9.80, 120, 90),
-        ('Embutidos',  'Linguiça calabresa 500g',    14.90,  80, 60),
-        ('Embutidos',  'Linguiça toscana 1kg',       21.90,  60, 45),
-        ('Embutidos',  'Mortadela defumada 1kg',     24.50,  50, 70),
-        ('Embutidos',  'Apresuntado 1kg',            17.50,  15, 40),
-        ('Frios',      'Presunto fatiado 200g',      12.90, 100, 30),
-        ('Frios',      'Peito de peru fatiado 200g', 15.90,  70, 25),
-        ('Frios',      'Salame italiano 300g',       32.00,  40, 120),
-        ('Defumados',  'Bacon em manta 1kg',         38.90,  35, 50),
-        ('Laticínios', 'Queijo mussarela 500g',      27.00,  90, 12)
-    ) AS v (Categoria, Nome, Preco, Qtd, Dias)
-    JOIN dbo.Categoria c ON c.Nome = v.Categoria;
-END
-GO
-
-IF NOT EXISTS (SELECT 1 FROM dbo.Pessoa)
-BEGIN
-    DECLARE @idAdmin INT, @idFunc INT;
-
-    -- CPFs de exemplo (válidos pelo algoritmo, apenas para teste)
-    EXEC dbo.sp_CadastrarFuncionario
-         @Nome = 'Administrador', @CPF = '529.982.247-25', @Email = 'admin@itsfoodbrasil.com.br',
-         @Telefone = '(19) 99999-0001', @DataNascimento = '1985-03-10', @Perfil = 'Admin',
-         @IdPessoa = @idAdmin OUTPUT;
-
-    EXEC dbo.sp_CadastrarFuncionario
-         @Nome = 'Carlos Silva', @CPF = '168.995.350-09', @Email = 'carlos@itsfoodbrasil.com.br',
-         @Telefone = '(19) 99999-0002', @DataNascimento = '1992-07-21', @Perfil = 'Funcionario',
-         @IdPessoa = @idFunc OUTPUT;
-
-    EXEC dbo.sp_CadastrarFuncionario
-         @Nome = 'Ana Souza', @CPF = '111.444.777-35', @Email = 'ana@itsfoodbrasil.com.br',
-         @Telefone = '(19) 99999-0003', @DataNascimento = '1995-11-02', @Perfil = 'Funcionario',
-         @IdPessoa = @idFunc OUTPUT;
-END
-GO
-
-IF NOT EXISTS (SELECT 1 FROM dbo.Movimentacao)
-BEGIN
-    DECLARE @admin INT = (SELECT TOP 1 IdPessoa FROM dbo.Funcionario WHERE Perfil = 'Admin' ORDER BY IdPessoa);
-
-    INSERT dbo.Movimentacao (Tipo, Valor, Descricao, DataMovimentacao, IdFuncionario) VALUES
-        ('Saída',   6500.00, 'Pagamento de aluguel',          DATEADD(DAY, -28, GETDATE()), @admin),
-        ('Saída',  10800.00, 'Pagamento fornecedor Frimesa',  DATEADD(DAY, -24, GETDATE()), @admin),
-        ('Saída',   4230.00, 'Pagamento de energia',          DATEADD(DAY, -20, GETDATE()), @admin),
-        ('Saída',   9500.00, 'Compra de mercadorias',         DATEADD(DAY, -15, GETDATE()), @admin),
-        ('Entrada', 3000.00, 'Suprimento de caixa',           DATEADD(DAY, -12, GETDATE()), @admin),
-        ('Saída',   8800.00, 'Compra de mercadorias',         DATEADD(DAY,  -9, GETDATE()), @admin),
-        ('Saída',   1250.00, 'Pagamento de frete',            DATEADD(DAY,  -5, GETDATE()), @admin),
-        ('Saída',  12450.00, 'Pagamento fornecedor Frimesa',  DATEADD(DAY,  -2, GETDATE()), @admin);
-END
-GO
-
--- Duas vendas de exemplo, feitas pela própria procedure (baixa estoque e gera movimentação)
-IF NOT EXISTS (SELECT 1 FROM dbo.Venda)
-BEGIN
-    DECLARE @func INT = (SELECT TOP 1 IdPessoa FROM dbo.Pessoa WHERE Nome = 'Carlos Silva');
-    DECLARE @itens dbo.TipoItemVenda, @nova INT;
-
-    INSERT @itens VALUES
-        ((SELECT IdProduto FROM dbo.Produto WHERE Nome = 'Presunto fatiado 200g'), 20),
-        ((SELECT IdProduto FROM dbo.Produto WHERE Nome = 'Mortadela defumada 1kg'), 10),
-        ((SELECT IdProduto FROM dbo.Produto WHERE Nome = 'Salsicha hot dog 500g'), 30);
-    EXEC dbo.sp_RegistrarVenda @IdFuncionario = @func, @Itens = @itens, @Desconto = 0, @IdVenda = @nova OUTPUT;
-
-    DELETE @itens;
-    INSERT @itens VALUES
-        ((SELECT IdProduto FROM dbo.Produto WHERE Nome = 'Linguiça toscana 1kg'), 10),
-        ((SELECT IdProduto FROM dbo.Produto WHERE Nome = 'Bacon em manta 1kg'), 5);
-    EXEC dbo.sp_RegistrarVenda @IdFuncionario = @func, @Itens = @itens, @Desconto = 5, @IdVenda = @nova OUTPUT;
-END
-GO
-
-
-/* =====================================================================
-   EXEMPLOS DE USO
-   =====================================================================
-
-   -- Fluxo de caixa dos últimos 30 dias, só saídas, maior valor primeiro
-   EXEC dbo.sp_ResumoFluxoCaixa;
-   EXEC dbo.sp_FluxoCaixa @Tipo = 'Saída', @Ordenar = 'valor', @Direcao = 'desc';
-
-   -- Vendas concluídas do mês, por funcionário
-   DECLARE @total DECIMAL(18,2);
-   EXEC dbo.sp_ListarVendas @DataInicial = '2026-10-01', @DataFinal = '2026-10-31',
-                            @Status = 'Concluída', @Ordenar = 'funcionario', @Direcao = 'asc',
-                            @TotalConcluidas = @total OUTPUT;
-   SELECT @total AS TotalConcluidas;
-
-   -- Estoque com validade próxima, ordenado por validade
-   EXEC dbo.sp_ListarEstoque @Situacao = 'proxima', @Ordenar = 'validade';
-
-   -- Nova venda
-   DECLARE @itens dbo.TipoItemVenda, @id INT;
-   INSERT @itens VALUES (1, 2), (3, 1);
-   EXEC dbo.sp_RegistrarVenda @IdFuncionario = 2, @Itens = @itens, @Desconto = 0, @IdVenda = @id OUTPUT;
-   SELECT @id AS NovaVenda;
-
-   ===================================================================== */
-
-   /* =====================================================================
-   ItsFoodBrasil - AJUSTES PARA A INTEGRAÇÃO COM O SISTEMA (.NET)
-
-   Execute DEPOIS do script ItsFoodBrasil_Banco_SQLServer_Atualizado.sql.
-   Pode ser executado mais de uma vez (idempotente).
-
-   O que este script faz:
-     1. Pessoa.Senha passa de VARCHAR(50) para VARCHAR(255)
-        (a senha é gravada como HASH, que é maior que 50 caracteres).
-     2. Movimentacao ganha a coluna Categoria
-        (a tela de Fluxo de Caixa filtra e exibe a categoria do lançamento).
-     3. vw_FluxoCaixa passa a devolver a Categoria
-        (vendas sem categoria aparecem como 'Vendas').
-     4. sp_RegistrarMovimentacao passa a receber @Categoria.
-   ===================================================================== */
-
-USE ItsFoodBrasil;
-GO
-
-SET NOCOUNT ON;
-GO
-
--- ---------------------------------------------------------------------
--- 1. Senha em hash
--- ---------------------------------------------------------------------
-ALTER TABLE dbo.Pessoa ALTER COLUMN Senha VARCHAR(255) NULL;
-GO
-
--- ---------------------------------------------------------------------
--- 2. Categoria da movimentação
--- ---------------------------------------------------------------------
-IF COL_LENGTH(N'dbo.Movimentacao', N'Categoria') IS NULL
-    ALTER TABLE dbo.Movimentacao ADD Categoria VARCHAR(50) NULL;
-GO
-
--- Lançamentos manuais antigos (dados de exemplo) ficam com uma categoria coerente.
--- As entradas geradas por venda continuam sem categoria: a view mostra 'Vendas'.
-UPDATE dbo.Movimentacao
-   SET Categoria = CASE
-        WHEN Descricao LIKE 'Pagamento de aluguel%'   THEN 'Despesas'
-        WHEN Descricao LIKE 'Pagamento de energia%'   THEN 'Despesas'
-        WHEN Descricao LIKE 'Pagamento fornecedor%'   THEN 'Fornecedores'
-        WHEN Descricao LIKE 'Compra de mercadorias%'  THEN 'Compras'
-        WHEN Descricao LIKE 'Pagamento de frete%'     THEN 'Frete'
-        WHEN Descricao LIKE 'Suprimento de caixa%'    THEN 'Suprimento de caixa'
-        WHEN Tipo = 'Entrada'                         THEN 'Outras entradas'
-        ELSE 'Outras saídas'
-   END
- WHERE Categoria IS NULL
-   AND IdVenda IS NULL;
-GO
-
--- ---------------------------------------------------------------------
--- 3. View do fluxo de caixa com a categoria
--- ---------------------------------------------------------------------
-CREATE OR ALTER VIEW dbo.vw_FluxoCaixa
-AS
-SELECT  m.IdMovimentacao,
-        m.DataMovimentacao,
-        m.Descricao,
-        m.Tipo,
-        m.Valor,
-        CASE WHEN m.Tipo = 'Entrada' THEN m.Valor ELSE -m.Valor END AS ValorComSinal,
-        CASE WHEN m.IdVenda IS NOT NULL THEN 'Venda' ELSE 'Manual' END AS Origem,
-        m.IdVenda,
-        m.IdFuncionario,
-        pe.Nome AS Funcionario,
-        COALESCE(m.Categoria,
-                 CASE WHEN m.IdVenda IS NOT NULL THEN 'Vendas'
-                      WHEN m.Tipo = 'Entrada'    THEN 'Outras entradas'
-                      ELSE 'Outras saídas' END) AS Categoria
-FROM dbo.Movimentacao m
-LEFT JOIN dbo.Pessoa  pe ON pe.IdPessoa = m.IdFuncionario;
-GO
-
--- ---------------------------------------------------------------------
--- 4. Lançamento manual com categoria
+-- 17 -> Lançamento manual ("Nova movimentação"), agora com categoria.
 -- ---------------------------------------------------------------------
 CREATE OR ALTER PROCEDURE dbo.sp_RegistrarMovimentacao
     @Tipo            VARCHAR(10),
@@ -1442,3 +1642,337 @@ BEGIN
     SET @IdMovimentacao = SCOPE_IDENTITY();
 END;
 GO
+
+-- TESTE 17: Registrar movimentação manual
+BEGIN TRANSACTION;
+
+DECLARE @IdMovimentacao INT;
+
+EXEC dbo.sp_RegistrarMovimentacao
+    @Tipo = 'Saída',
+    @Valor = 10.00,
+    @Descricao = 'Movimentação de teste',
+    @Categoria = 'Teste',
+    @Data = NULL,
+    @IdFuncionario = NULL,
+    @IdMovimentacao = @IdMovimentacao OUTPUT;
+
+SELECT *
+FROM dbo.Movimentacao
+WHERE IdMovimentacao = @IdMovimentacao;
+
+ROLLBACK TRANSACTION;
+GO
+
+-- ---------------------------------------------------------------------
+-- 18 -> Cards do fluxo de caixa. Sem datas: últimos 30 dias.
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE dbo.sp_ResumoFluxoCaixa
+    @DataInicial DATE = NULL,
+    @DataFinal   DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SET @DataFinal   = ISNULL(@DataFinal, CAST(GETDATE() AS DATE));
+    SET @DataInicial = ISNULL(@DataInicial, DATEADD(DAY, -30, CAST(GETDATE() AS DATE)));
+
+    IF @DataInicial > @DataFinal
+        THROW 50410, 'A data inicial não pode ser maior que a data final.', 1;
+
+    DECLARE @Anterior DECIMAL(18,2) = dbo.fn_SaldoCaixaAte(DATEADD(DAY, -1, @DataInicial));
+    DECLARE @Entradas DECIMAL(18,2), @Saidas DECIMAL(18,2);
+
+    SELECT @Entradas = ISNULL(SUM(CASE WHEN Tipo = 'Entrada' THEN Valor END), 0),
+           @Saidas   = ISNULL(SUM(CASE WHEN Tipo = 'Saída'   THEN Valor END), 0)
+    FROM dbo.fn_MovimentacoesPorPeriodo(@DataInicial, @DataFinal);
+
+    SELECT  @DataInicial                       AS DataInicial,
+            @DataFinal                         AS DataFinal,
+            @Anterior                          AS SaldoAnterior,
+            @Entradas                          AS TotalEntradas,
+            @Saidas                            AS TotalSaidas,
+            @Anterior + @Entradas - @Saidas    AS SaldoAtual;
+END;
+GO
+
+-- TESTE 18: Consultar resumo do fluxo de caixa
+EXEC dbo.sp_ResumoFluxoCaixa;
+GO
+
+-- Teste para um período específico
+EXEC dbo.sp_ResumoFluxoCaixa
+    @DataInicial = '2026-01-01',
+    @DataFinal = '2026-12-31';
+GO
+
+-- ---------------------------------------------------------------------
+-- 19 -> -- Tabela do fluxo de caixa: período, tipo e ordenação.
+-- @Ordenar: data | descricao | tipo | valor ; padrão: data crescente.
+-- ---------------------------------------------------------------------
+
+CREATE OR ALTER PROCEDURE dbo.sp_FluxoCaixa
+    @DataInicial DATE        = NULL,
+    @DataFinal   DATE        = NULL,
+    @Tipo        VARCHAR(10) = NULL,
+    @Ordenar     VARCHAR(20) = 'data',
+    @Direcao     VARCHAR(4)  = 'asc'
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SET @DataFinal   = ISNULL(@DataFinal, CAST(GETDATE() AS DATE));
+    SET @DataInicial = ISNULL(@DataInicial, DATEADD(DAY, -30, CAST(GETDATE() AS DATE)));
+
+    IF @DataInicial > @DataFinal
+        THROW 50410, 'A data inicial não pode ser maior que a data final.', 1;
+
+    IF @Direcao NOT IN ('asc', 'desc') SET @Direcao = 'asc';
+    SET @Tipo = NULLIF(LTRIM(RTRIM(ISNULL(@Tipo, ''))), '');
+
+    SELECT  f.IdMovimentacao, f.DataMovimentacao, f.Descricao, f.Tipo, f.Categoria, f.Valor,
+            f.ValorComSinal, f.Origem, f.IdVenda, f.Funcionario
+    FROM dbo.vw_FluxoCaixa f
+    WHERE f.DataMovimentacao >= CAST(@DataInicial AS DATETIME)
+      AND f.DataMovimentacao <  DATEADD(DAY, 1, CAST(@DataFinal AS DATETIME))
+      AND (@Tipo IS NULL OR f.Tipo = @Tipo)
+    ORDER BY
+        CASE WHEN @Ordenar = 'descricao' AND @Direcao = 'asc'  THEN f.Descricao END ASC,
+        CASE WHEN @Ordenar = 'descricao' AND @Direcao = 'desc' THEN f.Descricao END DESC,
+        CASE WHEN @Ordenar = 'tipo'      AND @Direcao = 'asc'  THEN f.Tipo END ASC,
+        CASE WHEN @Ordenar = 'tipo'      AND @Direcao = 'desc' THEN f.Tipo END DESC,
+        CASE WHEN @Ordenar = 'valor'     AND @Direcao = 'asc'  THEN f.Valor END ASC,
+        CASE WHEN @Ordenar = 'valor'     AND @Direcao = 'desc' THEN f.Valor END DESC,
+        CASE WHEN @Ordenar NOT IN ('descricao', 'tipo', 'valor') AND @Direcao = 'asc'  THEN f.DataMovimentacao END ASC,
+        CASE WHEN @Ordenar NOT IN ('descricao', 'tipo', 'valor') AND @Direcao = 'desc' THEN f.DataMovimentacao END DESC,
+        f.IdMovimentacao ASC;
+END;
+GO
+
+-- TESTE 19: Listar fluxo de caixa
+EXEC dbo.sp_FluxoCaixa;
+GO
+
+-- Teste filtrando entradas e ordenando pelo valor
+EXEC dbo.sp_FluxoCaixa
+    @DataInicial = NULL,
+    @DataFinal = NULL,
+    @Tipo = 'Entrada',
+    @Ordenar = 'valor',
+    @Direcao = 'desc';
+GO
+-- ---------------------------------------------------------------------
+-- 20 -> Dashboard
+-- ---------------------------------------------------------------------
+CREATE OR ALTER PROCEDURE dbo.sp_Dashboard
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT * FROM dbo.vw_Dashboard;
+
+    -- últimos 30 dias
+    SELECT Dia, QtdVendas, Faturamento
+    FROM dbo.vw_VendasPorDia
+    WHERE Dia >= DATEADD(DAY, -30, CAST(GETDATE() AS DATE))
+    ORDER BY Dia;
+
+    -- alertas de estoque
+    SELECT IdProduto, Nome, Categoria, Estoque, EstoqueMinimo, DataValidade, DiasParaVencer,
+           SemEstoque, EstoqueBaixo, Vencido, ValidadeProxima
+    FROM dbo.vw_Estoque
+    WHERE EmAlerta = 1
+    ORDER BY Nome;
+
+    -- últimas vendas
+    SELECT TOP (5) IdVenda, DataVenda, Funcionario, QtdItens, ValorTotal, Status
+    FROM dbo.vw_Vendas
+    ORDER BY DataVenda DESC;
+END;
+GO
+
+-- TESTE 20: Consultar dados do dashboard
+EXEC dbo.sp_Dashboard;
+GO
+
+/* =====================================================================
+   INSERTS - ItsFoodBrasil
+   Rode depois do script do banco, uma vez, na ordem.
+ 
+   Tabela          Como é preenchida
+   Pessoa          sp_CadastrarFuncionario (3 pessoas)
+   Funcionario     sp_CadastrarFuncionario (3 funcionários)
+   Categoria       sp_CadastrarCategoria   (3 categorias)
+   Produto         sp_CadastrarProduto     (6 produtos)
+   Venda           sp_RegistrarVenda       (3 vendas)
+   ItemVenda       sp_RegistrarVenda       (7 itens)
+   Movimentacao    sp_RegistrarVenda (3 entradas) + sp_RegistrarMovimentacao (3 lançamentos)
+   ===================================================================== */
+ 
+ 
+/* ---------------------------------------------------------------------
+   1. Pessoa + Funcionario
+--------------------------------------------------------------------- */
+declare @id int;
+ 
+if not exists (select 1 from dbo.Pessoa where Email = 'marcos@itsfoodbrasil.com.br')
+    exec dbo.sp_CadastrarFuncionario
+         @Nome = 'Marcos Oliveira', @Email = 'marcos@itsfoodbrasil.com.br',
+         @Perfil = 'Funcionario', @IdPessoa = @id output;
+ 
+if not exists (select 1 from dbo.Pessoa where Email = 'juliana@itsfoodbrasil.com.br')
+    exec dbo.sp_CadastrarFuncionario
+         @Nome = 'Juliana Rocha', @Email = 'juliana@itsfoodbrasil.com.br',
+         @Perfil = 'Funcionario', @IdPessoa = @id output;
+ 
+if not exists (select 1 from dbo.Pessoa where Email = 'roberto@itsfoodbrasil.com.br')
+    exec dbo.sp_CadastrarFuncionario
+         @Nome = 'Roberto Almeida', @Email = 'roberto@itsfoodbrasil.com.br',
+         @Perfil = 'Admin', @IdPessoa = @id output;
+go
+ 
+ 
+/* ---------------------------------------------------------------------
+   2. Categoria
+--------------------------------------------------------------------- */
+declare @id int;
+ 
+if not exists (select 1 from dbo.Categoria where Nome = 'Congelados')
+    exec dbo.sp_CadastrarCategoria
+         @Nome = 'Congelados', @Descricao = 'Hambúrgueres, nuggets e empanados',
+         @IdCategoria = @id output;
+ 
+if not exists (select 1 from dbo.Categoria where Nome = 'Carnes Suínas')
+    exec dbo.sp_CadastrarCategoria
+         @Nome = 'Carnes Suínas', @Descricao = 'Costelinhas, copas e lombos',
+         @IdCategoria = @id output;
+ 
+if not exists (select 1 from dbo.Categoria where Nome = 'Temperos e Molhos')
+    exec dbo.sp_CadastrarCategoria
+         @Nome = 'Temperos e Molhos', @Descricao = 'Molhos prontos e temperos para embutidos',
+         @IdCategoria = @id output;
+go
+ 
+ 
+/* ---------------------------------------------------------------------
+   3. Produto
+--------------------------------------------------------------------- */
+declare @id int,
+        @congelados int = (select IdCategoria from Categoria where Nome = 'Congelados'),
+        @suinas     int = (select IdCategoria from Categoria where Nome = 'Carnes Suínas'),
+        @temperos   int = (select IdCategoria from Categoria where Nome = 'Temperos e Molhos');
+ 
+if not exists (select 1 from dbo.Produto where Nome = 'Hambúrguer bovino 672g')
+    exec dbo.sp_CadastrarProduto
+         @IdCategoria = @congelados, @Nome = 'Hambúrguer bovino 672g',
+     @Descricao = 'Caixa com 12 unidades', @Preco = 18.90,
+     @QuantidadeEstoque = 150, @EstoqueMinimo = 30, @DataValidade = '2027-03-15',
+     @IdProduto = @id output;
+ 
+if not exists (select 1 from dbo.Produto where Nome = 'Nuggets de frango 300g')
+    exec dbo.sp_CadastrarProduto
+         @IdCategoria = @congelados, @Nome = 'Nuggets de frango 300g',
+     @Descricao = 'Pacote congelado', @Preco = 16.50,
+     @QuantidadeEstoque = 100, @EstoqueMinimo = 25, @DataValidade = '2027-02-20',
+     @IdProduto = @id output;
+ 
+if not exists (select 1 from dbo.Produto where Nome = 'Costelinha suína defumada 1kg')
+    exec dbo.sp_CadastrarProduto
+         @IdCategoria = @suinas, @Nome = 'Costelinha suína defumada 1kg',
+     @Descricao = 'Resfriada, embalada a vácuo', @Preco = 42.00,
+     @QuantidadeEstoque = 60, @EstoqueMinimo = 15, @DataValidade = '2026-12-30',
+     @IdProduto = @id output;
+ 
+if not exists (select 1 from dbo.Produto where Nome = 'Copa lombo fatiada 200g')
+    exec dbo.sp_CadastrarProduto
+         @IdCategoria = @suinas, @Nome = 'Copa lombo fatiada 200g',
+     @Descricao = 'Fatiada, embalada a vácuo', @Preco = 19.90,
+     @QuantidadeEstoque = 80, @EstoqueMinimo = 20, @DataValidade = '2027-01-25',
+     @IdProduto = @id output;
+ 
+if not exists (select 1 from dbo.Produto where Nome = 'Molho barbecue 400g')
+    exec dbo.sp_CadastrarProduto
+         @IdCategoria = @temperos, @Nome = 'Molho barbecue 400g',
+     @Descricao = 'Frasco de 400g', @Preco = 11.50,
+     @QuantidadeEstoque = 90, @EstoqueMinimo = 20, @DataValidade = '2027-08-10',
+     @IdProduto = @id output;
+ 
+if not exists (select 1 from dbo.Produto where Nome = 'Tempero para linguiça 100g')
+    exec dbo.sp_CadastrarProduto
+         @IdCategoria = @temperos, @Nome = 'Tempero para linguiça 100g',
+     @Descricao = 'Sachê de 100g', @Preco = 6.90,
+     @QuantidadeEstoque = 120, @EstoqueMinimo = 30, @DataValidade = '2027-09-05',
+     @IdProduto = @id output;
+go
+ 
+ 
+/* ---------------------------------------------------------------------
+   4. Venda + ItemVenda + Movimentacao (entrada gerada pela venda)
+   A procedure confere o estoque, baixa as quantidades e lança no caixa.
+--------------------------------------------------------------------- */
+declare @marcos  int = (select IdPessoa from Pessoa where Email = 'marcos@itsfoodbrasil.com.br'),
+        @juliana int = (select IdPessoa from Pessoa where Email = 'juliana@itsfoodbrasil.com.br'),
+        @roberto int = (select IdPessoa from Pessoa where Email = 'roberto@itsfoodbrasil.com.br'),
+        @itens TipoItemVenda,
+        @venda int;
+ 
+-- venda 1 (Marcos): 2 itens, sem desconto
+if not exists (select 1 from dbo.Venda v join dbo.ItemVenda i on i.IdVenda = v.IdVenda join dbo.Produto p on p.IdProduto = i.IdProduto where v.IdFuncionario = @marcos and p.Nome = 'Hambúrguer bovino 672g' and i.Quantidade = 20)
+begin
+    insert @itens values
+        ((select IdProduto from dbo.Produto where Nome = 'Hambúrguer bovino 672g'), 20),
+        ((select IdProduto from dbo.Produto where Nome = 'Molho barbecue 400g'), 10);
+    exec dbo.sp_RegistrarVenda @IdFuncionario = @marcos, @Itens = @itens, @Desconto = 0, @IdVenda = @venda output;
+end;
+ 
+-- venda 2 (Juliana): 2 itens, desconto de 10,00
+delete @itens;
+if not exists (select 1 from dbo.Venda v join dbo.ItemVenda i on i.IdVenda = v.IdVenda join dbo.Produto p on p.IdProduto = i.IdProduto where v.IdFuncionario = @juliana and p.Nome = 'Costelinha suína defumada 1kg' and i.Quantidade = 8)
+begin
+    insert @itens values
+        ((select IdProduto from dbo.Produto where Nome = 'Costelinha suína defumada 1kg'), 8),
+        ((select IdProduto from dbo.Produto where Nome = 'Nuggets de frango 300g'), 15);
+    exec dbo.sp_RegistrarVenda @IdFuncionario = @juliana, @Itens = @itens, @Desconto = 10, @IdVenda = @venda output;
+end;
+ 
+-- venda 3 (Roberto): 3 itens, sem desconto
+delete @itens;
+if not exists (select 1 from dbo.Venda v join dbo.ItemVenda i on i.IdVenda = v.IdVenda join dbo.Produto p on p.IdProduto = i.IdProduto where v.IdFuncionario = @roberto and p.Nome = 'Copa lombo fatiada 200g' and i.Quantidade = 12)
+begin
+    insert @itens values
+        ((select IdProduto from dbo.Produto where Nome = 'Copa lombo fatiada 200g'), 12),
+        ((select IdProduto from dbo.Produto where Nome = 'Tempero para linguiça 100g'), 25),
+        ((select IdProduto from dbo.Produto where Nome = 'Hambúrguer bovino 672g'), 5);
+    exec dbo.sp_RegistrarVenda @IdFuncionario = @roberto, @Itens = @itens, @Desconto = 0, @IdVenda = @venda output;
+end;
+go
+ 
+ 
+/* ---------------------------------------------------------------------
+   5. Movimentacao (lançamentos manuais do fluxo de caixa)
+--------------------------------------------------------------------- */
+declare @roberto int = (select IdPessoa from Pessoa where Email = 'roberto@itsfoodbrasil.com.br'),
+        @id int;
+ 
+if not exists (select 1 from dbo.Movimentacao where Descricao = 'Compra de embalagens a vácuo' and IdVenda is null)
+    exec dbo.sp_RegistrarMovimentacao
+         @Tipo = 'Saída', @Valor = 2750.00, @Descricao = 'Compra de embalagens a vácuo',
+         @Categoria = 'Compras', @IdFuncionario = @roberto, @IdMovimentacao = @id output;
+ 
+if not exists (select 1 from dbo.Movimentacao where Descricao = 'Manutenção da câmara fria' and IdVenda is null)
+    exec dbo.sp_RegistrarMovimentacao
+         @Tipo = 'Saída', @Valor = 980.00, @Descricao = 'Manutenção da câmara fria',
+         @Categoria = 'Despesas', @IdFuncionario = @roberto, @IdMovimentacao = @id output;
+ 
+if not exists (select 1 from dbo.Movimentacao where Descricao = 'Suprimento de caixa' and IdVenda is null)
+    exec dbo.sp_RegistrarMovimentacao
+         @Tipo = 'Entrada', @Valor = 1500.00, @Descricao = 'Suprimento de caixa',
+         @Categoria = 'Suprimento de caixa', @IdFuncionario = @roberto, @IdMovimentacao = @id output;
+go
+
+
+select * from Pessoa
+select * from Movimentacao
+select * from Venda
+select * from ItemVenda
+select * from Produto
