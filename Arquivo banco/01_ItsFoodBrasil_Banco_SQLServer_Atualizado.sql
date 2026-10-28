@@ -696,7 +696,7 @@ DECLARE @Email VARCHAR(150);
 DECLARE @Perfil VARCHAR(20);
 
 SELECT TOP 1
-    @IdPessoa = IdPessoa,
+    @IdPessoa = IdFuncionario,
     @Nome = Nome,
     @Email = Email,
     @Perfil = Perfil
@@ -722,7 +722,7 @@ BEGIN
 
     SELECT *
     FROM dbo.vw_Funcionarios
-    WHERE IdPessoa = @IdPessoa;
+    WHERE IdFuncionario = @IdPessoa;
 
     ROLLBACK TRANSACTION;
 END;
